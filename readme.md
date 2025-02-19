@@ -1,10 +1,12 @@
 # FolderContentsArchiver
 
+FolderContentsArchiver is a simple Python-based tool for compressing all folders in a given directory into ZIP archives and extracting ZIP archives back into folders. The tool ensures data integrity by verifying the file contents using SHA-256 hashing before deleting the original files.
+
 ## Features
-- **Batch Folder Compression:** Converts all folders in a directory into ZIP files.
-- **Batch ZIP Extraction:** Extracts all ZIP files in a directory back into folders.
-- **Integrity Verification:** Uses SHA-256 checksums to verify data integrity before deletion.
-- **Logging Support:** Provides detailed logs for process tracking.
+- Batch Folder Compression: Converts all folders in a directory into ZIP files.
+- Batch ZIP Extraction: Extracts all ZIP files in a directory back into folders.
+- Integrity Verification: Uses SHA-256 checksums to verify data integrity before deletion.
+- Logging Support: Provides detailed logs for process tracking.
 
 ## Installation
 - Requirements: Python 3.x
