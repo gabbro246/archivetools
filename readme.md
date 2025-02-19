@@ -8,10 +8,11 @@
 
 ## Installation
 - Requirements: Python 3.x
-- Clone this repository and navigate to the folder: ```sh
-git clone https://github.com/yourusername/FolderContentsArchiver.git
-cd FolderContentsArchiver
-```
+- Clone this repository and navigate to the folder:
+  ```sh
+  git clone https://github.com/yourusername/FolderContentsArchiver.git
+  cd FolderContentsArchiver
+  ```
 
 ## Usage
 
