@@ -1,8 +1,9 @@
 import os
+import shutil
+import argparse
 import zipfile
 import hashlib
 import logging
-import shutil
 import sys
 
 # Set up logging to display logs in the terminal
@@ -84,6 +85,9 @@ def unzip_and_verify(directory):
                 shutil.rmtree(extracted_folder_path)
 
 if __name__ == "__main__":
-    # Get directory from command line argument or default to current directory
-    directory_to_unzip = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    parser = argparse.ArgumentParser(description='Convert all zip files to folders.')
+    parser.add_argument('-f', '--folder', type=str, help='Target folder containing zip files')
+    args = parser.parse_args()
+
+    directory_to_unzip = args.folder
     unzip_and_verify(directory_to_unzip)

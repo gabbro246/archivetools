@@ -1,11 +1,11 @@
 import os
 import shutil
-import datetime
 import argparse
-from datetime import datetime as dt
+import datetime
+import calendar
 from PIL import Image
 from PIL.ExifTags import TAGS
-import calendar
+
 
 # List of allowed file extensions for images and videos
 IMAGE_VIDEO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.mp4', '.mov', '.avi', '.mkv', '.psd', '.heic', '.nef', '.gif', '.bmp', '.flv', '.wmv', '.webm', '.3gp', '.dng' ] 
@@ -27,11 +27,11 @@ def get_exif_date_taken_or_digitized(file_path):
             for tag, value in exif_data.items():
                 decoded = TAGS.get(tag, tag)
                 if decoded == 'DateTimeOriginal':
-                    date_taken = dt.strptime(value, '%Y:%m:%d %H:%M:%S')
+                    date_taken = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
                 elif decoded == 'DateTimeDigitized':
-                    date_digitized = dt.strptime(value, '%Y:%m:%d %H:%M:%S')
+                    date_digitized = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
                 elif decoded == 'DateTime':
-                    date_time = dt.strptime(value, '%Y:%m:%d %H:%M:%S')
+                    date_time = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
         # Return the earliest of the available dates
         dates = [d for d in [date_taken, date_digitized, date_time] if d]
         return min(dates) if dates else None
@@ -41,19 +41,19 @@ def get_exif_date_taken_or_digitized(file_path):
 
 def get_file_dates(file_path):
     stat = os.stat(file_path)
-    creation_date = dt.fromtimestamp(stat.st_ctime)
-    modification_date = dt.fromtimestamp(stat.st_mtime)
+    creation_date = datetime.datetime.fromtimestamp(stat.st_ctime)
+    modification_date = datetime.datetime.fromtimestamp(stat.st_mtime)
     return creation_date, modification_date
 
 def get_week_ranges(iso_year, iso_week):
-    start_date = dt.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
+    start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
     end_date = start_date + datetime.timedelta(days=6)
     
     # Compare start_date.year and end_date.year directly
     if start_date.year != end_date.year:
         # Return two ranges if the week crosses the year boundary
-        return [(start_date, dt(year=start_date.year, month=12, day=31).date()), 
-                (dt(year=end_date.year, month=1, day=1).date(), end_date)]
+        return [(start_date, datetime.datetime(year=start_date.year, month=12, day=31).date()), 
+                (datetime.datetime(year=end_date.year, month=1, day=1).date(), end_date)]
     else:
         return [(start_date, end_date)]
 
@@ -153,8 +153,8 @@ def organize_files_by_month(target_dir, rename_files):
                 date_used = min(creation_date, modification_date)
                 date_source = "Metadata"
 
-            start_date = dt(date_used.year, date_used.month, 1)
-            end_date = dt(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
+            start_date = datetime.datetime(date_used.year, date_used.month, 1)
+            end_date = datetime.datetime(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
             month_name_german = GERMAN_MONTH_NAMES[date_used.month]
             folder_name = f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {month_name_german}'
             target_folder = os.path.join(target_dir, folder_name)
@@ -219,7 +219,7 @@ def main():
     group.add_argument('-w', '--week', action='store_true', help='Organize files by week')
     group.add_argument('-m', '--month', action='store_true', help='Organize files by month')
     group.add_argument('-y', '--year', action='store_true', help='Organize files by year')
-    parser.add_argument('-f', '--folder', type=str, help='Target folder for organizing files', default=os.getcwd())
+    parser.add_argument('-f', '--folder', type=str, help='Target folder for organizing files')
     parser.add_argument('--rename', action='store_true', help='Rename files if a file with the same name already exists')
 
     args = parser.parse_args()
