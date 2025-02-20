@@ -6,11 +6,8 @@ import calendar
 from PIL import Image
 from PIL.ExifTags import TAGS
 
-
-# List of allowed file extensions for images and videos
 IMAGE_VIDEO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.mp4', '.mov', '.avi', '.mkv', '.psd', '.heic', '.nef', '.gif', '.bmp', '.flv', '.wmv', '.webm', '.3gp', '.dng' ] 
-
-# German month names
+SIDECAR_EXTENSIONS =  ['.xmp', '.json', '.txt', '.srt']
 GERMAN_MONTH_NAMES = {
     1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai', 6: 'Juni',
     7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Dezember'
@@ -44,6 +41,29 @@ def get_file_dates(file_path):
     creation_date = datetime.datetime.fromtimestamp(stat.st_ctime)
     modification_date = datetime.datetime.fromtimestamp(stat.st_mtime)
     return creation_date, modification_date
+
+def move_sidecar_files(file_path, target_folder):
+    base_name, file_extension = os.path.splitext(os.path.basename(file_path))
+    base_path = os.path.splitext(file_path)[0]
+    
+    for ext in SIDECAR_EXTENSIONS:
+        # Check both naming patterns
+        potential_sidecars = [
+            f"{base_path}{ext}",  # filename.sidecarextension
+            f"{file_path}{ext}"   # filename.fileextension.sidecarextension
+        ]
+        
+        for sidecar_path in potential_sidecars:
+            if os.path.exists(sidecar_path):
+                sidecar_name = os.path.basename(sidecar_path)
+                target_sidecar_path = os.path.join(target_folder, sidecar_name)
+                target_sidecar_path = generate_unique_filename(target_sidecar_path)
+                try:
+                    shutil.move(sidecar_path, target_sidecar_path)
+                    print(f"Moved sidecar file {sidecar_name} to {target_folder}")
+                except FileNotFoundError as e:
+                    print(f"Error: Sidecar file {sidecar_name} could not be moved. File not found at {sidecar_path}.")
+
 
 def get_week_ranges(iso_year, iso_week):
     start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
@@ -95,6 +115,7 @@ def organize_files_by_day(target_dir, rename_files):
                 try:
                     shutil.move(file_path, target_path)
                     print(f"{file_name}\tDate used: {date_source} ({date_used})\tMoved to: {folder_name}")
+                    move_sidecar_files(file_path, target_folder)
                 except FileNotFoundError as e:
                     print(f"Error: {file_name} could not be moved. File not found at {file_path}.")
             else:
@@ -134,6 +155,7 @@ def organize_files_by_week(target_dir, rename_files):
                     try:
                         shutil.move(file_path, target_path)
                         print(f"{file_name}\tDate used: {date_source} ({date_used})\tMoved to: {folder_name}")
+                        move_sidecar_files(file_path, target_folder)
                     except FileNotFoundError as e:
                         print(f"Error: {file_name} could not be moved. File not found at {file_path}.")
                 else:
@@ -172,6 +194,7 @@ def organize_files_by_month(target_dir, rename_files):
                 try:
                     shutil.move(file_path, target_path)
                     print(f"{file_name}\tDate used: {date_source} ({date_used})\tMoved to: {folder_name}")
+                    move_sidecar_files(file_path, target_folder)
                 except FileNotFoundError as e:
                     print(f"Error: {file_name} could not be moved. File not found at {file_path}.")
             else:
@@ -207,6 +230,7 @@ def organize_files_by_year(target_dir, rename_files):
                 try:
                     shutil.move(file_path, target_path)
                     print(f"{file_name}\tDate used: {date_source} ({date_used})\tMoved to: {folder_name}")
+                    move_sidecar_files(file_path, target_folder)
                 except FileNotFoundError as e:
                     print(f"Error: {file_name} could not be moved. File not found at {file_path}.")
             else:
