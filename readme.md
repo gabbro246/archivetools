@@ -1,31 +1,37 @@
 # FolderContentsArchiver
 
-FolderContentsArchiver is a simple Python-based tool for compressing all folders in a given directory into ZIP archives and extracting ZIP archives back into folders. The tool ensures data integrity by verifying the file contents using SHA-256 hashing before deleting the original files.
+ArchiveTools is a set of Python-based tools for managing data inside a specified folder.
 
-## Installation
-- Requirements: Python 3.x
-- Clone this repository and navigate to the folder:
-  ```sh
-  git clone https://github.com/yourusername/FolderContentsArchiver.git
-  cd FolderContentsArchiver
-  ```
+## OrganizeMediaByDate
+This script organizes media files into folders based on the date taken from EXIF data or file metadata within a specified directory.
 
-## Usage
+`python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [--rename]`
 
-### Convert All Folders to ZIP
-Run the following command in the directory where you want to zip all folders:
-```sh
-python convertallfoldertozip.py [directory_path]
-```
-- If no directory path is provided, the current working directory is used.
-- The script will skip already existing ZIP files.
-- Original folders are deleted only if verification is successful.
+| Flag             | Description                            | Required |
+|------------------|----------------------------------------|----------|
+| `--folder`, `-f` | Target folder for organizing files     | Yes      |
+| `--day`, `-d`    | Organize files by individual days      | Yes*     |
+| `--week`, `-w`   | Organize files by weeks                | Yes*     |
+| `--month`, `-m`  | Organize files by months               | Yes*     |
+| `--year`, `-y`   | Organize files by years                | Yes*     |
+| `--rename`       | Rename files if a name conflict occurs | No       |
 
-### Convert All ZIPs to Folders
-Run the following command in the directory where you want to extract all ZIPs:
-```sh
-python convertallziptofolder.py [directory_path]
-```
-- If no directory path is provided, the current working directory is used.
-- The script will skip extraction if a folder with the same name already exists.
-- ZIP files are deleted only if verification is successful.
+
+## ConvertAllFolderToZip
+This script converts all folders within a specified directory into ZIP archives and verifies their contents.
+
+`python convertallfoldertozip.py --folder [target_folder]`
+
+| Flag             | Description                                 | Required |
+|------------------|---------------------------------------------|----------|
+| `--folder`, `-f` | Target folder containing the folders to zip | Yes      |
+
+
+## ConvertAllZipToFolder
+ This script extracts all ZIP files within a given directory into folders and verifies the integrity of the extracted files.
+
+ `python convertallziptofolder.py --folder [target_folder]`
+
+| Flag              | Description                                   | Required |
+|-------------------|-----------------------------------------------|----------|
+| `--folder`, `-f`  | Target folder containing zip files to convert | Yes      |
