@@ -16,8 +16,16 @@ def flatten_folder(root_folder, rename_files, depth=None):
         return
 
     current_depth = 0
+    prev_file_count = -1
     while True:
         any_folder_found = False
+        current_file_count = sum([len(files) for _, _, files in os.walk(root_folder)])
+
+        if current_file_count == prev_file_count:
+            print("No progress detected, stopping to avoid an infinite loop.")
+            break
+        prev_file_count = current_file_count
+
         for subdir in os.listdir(root_folder):
             subdir_path = os.path.join(root_folder, subdir)
             
