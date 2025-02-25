@@ -25,50 +25,36 @@ cd ArchiveTools
 
 ---
 
-## `convertallfoldertozip.py`
-This script scans a specified directory, converts all subfolders into ZIP files, and verifies the conversion using file hashes. If the ZIP file is confirmed to match the original files, the original folder is deleted to save space.
+## 📂 Usage
 
-**Usage:**
-```
-python convertallfoldertozip.py --folder [target_folder]
-```
+### `convertallfoldertozip.py`
+Converts all subfolders within a specified directory into ZIP files, ensuring data integrity through file hash verification. Successfully converted folders are deleted to save space.
 
-### Flags
+**Usage:** `python convertallfoldertozip.py --folder [target_folder]`
+**Flags:**
 - `-f`, `--folder`: Specifies the target folder containing folders to convert into ZIP files.
 
-## `convertallziptofolder.py`
-This script takes all ZIP files in a specified directory, extracts their contents back into folders, and verifies data integrity by comparing file hashes. If verification is successful, the ZIP file is automatically deleted.
+### `convertallziptofolder.py`
+Extracts ZIP files to restore the original folder structure. Includes a verification process that compares file hashes to ensure data consistency. Verified ZIP files are deleted automatically.
 
-**Usage:**
-```
-python convertallziptofolder.py --folder [target_folder]
-```
+**Usage:** `python convertallziptofolder.py --folder [target_folder]`
+**Flags:**
+- `-f`, `--folder`: SSpecifies the target folder containing ZIP files to extract.
 
-### Flags
-- `-f`, `--folder`: Specifies the target folder containing ZIP files to extract.
+### `flattenfolder.py`
+Flattens complex directory structures by moving all files to the top level of a specified folder. Offers optional renaming to handle naming conflicts and allows setting a flattening depth.
 
-## `flattenfolder.py`
-Simplifies directory structures by moving all files to the top level of a specified folder. Can optionally rename files to avoid conflicts and control the depth of flattening.
-
-**Usage:**
-```
-python flattenfolder.py --folder [target_folder] [--rename] [--depth n]
-```
-
-### Flags
+**Usage:** `python flattenfolder.py --folder [target_folder] [--rename] [--depth n]`
+**Flags:**
 - `-f`, `--folder`: Specifies the folder to flatten.
 - `-r`, `--rename`: Renames files to avoid conflicts.
 - `-d`, `--depth`: Sets the depth to flatten. Flattens all levels if not set.
 
-## `organizemediabydate.py`
-Organizes media files into date-based folders using either EXIF data or file metadata. Supports organization by day, week, month, or year, and manages sidecar files associated with images and videos.
+### `organizemediabydate.py`
+Organizes media files into folders based on their creation date. Uses EXIF data or file metadata to support organization by day, week, month, or year, and manages related sidecar files automatically.
 
-**Usage:**
-```
-python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [--rename]
-```
-
-### Flags
+**Usage:** `python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [--rename]`
+**Flags:**
 - `-f`, `--folder`: Specifies the folder containing media files.
 - `-d`, `--day`: Organizes files by individual days.
 - `-w`, `--week`: Organizes files by weeks.
@@ -76,16 +62,13 @@ python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [
 - `-y`, `--year`: Organizes files by years.
 - `--rename`: Renames files if a conflict occurs.
 
-## `deleteallduplicate.py`
-This script scans a directory for duplicate images and videos. It evaluates files based on their hashes and metadata, keeping the most relevant file (e.g., oldest photo based on EXIF data) and automatically deleting the rest.
+### `deleteallduplicate.py`
+Scans a directory for duplicate images and videos, retaining only the most relevant file based on EXIF data or metadata (e.g., the oldest photo). Duplicate files are automatically deleted.
 
-**Usage:**
-```
-python deleteallduplicate.py --folder [target_folder]
-```
-
-### Flags
+**Usage:** `python deleteallduplicate.py --folder [target_folder]`
+**Flags:**
 - `-f`, `--folder`: Specifies the folder to scan for duplicate files.
+
 
 ---
 
@@ -95,4 +78,8 @@ python deleteallduplicate.py --folder [target_folder]
 
 ## 🛠️ Support
 For help, please refer to the documentation or open an issue on the GitHub repository.
+
+---
+
+© 2025 gabbro246. All rights reserved.
 
