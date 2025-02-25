@@ -6,6 +6,8 @@ from collections import defaultdict
 from PIL import Image, ExifTags
 import mimetypes
 import time
+import argparse
+
 
 def get_file_hash(file_path):
     """Calculate SHA-256 hash of a file."""
@@ -18,6 +20,7 @@ def get_file_hash(file_path):
     except Exception as e:
         logging.error(f"Error hashing file {file_path}: {e}")
         return None
+
 
 def get_exif_date(file_path):
     """Extract Exif Date Taken from an image."""
@@ -33,6 +36,7 @@ def get_exif_date(file_path):
         logging.error(f"Error reading Exif data from {file_path}: {e}")
     return None
 
+
 def get_file_metadata(file_path):
     """Get file creation or modification date as fallback."""
     try:
@@ -42,6 +46,7 @@ def get_file_metadata(file_path):
     except Exception as e:
         logging.error(f"Error getting metadata for {file_path}: {e}")
         return None
+
 
 def prioritize_file(files):
     """Determine which file to keep based on rules."""
@@ -60,6 +65,7 @@ def prioritize_file(files):
     files_with_dates = [(file, get_file_metadata(file)) for file in files]
     files_with_dates.sort(key=lambda x: x[1])
     return files_with_dates[0][0] if files_with_dates[0][1] else files[0]
+
 
 def process_folder(folder_path):
     """Process folder to find and handle duplicate files."""
@@ -88,19 +94,19 @@ def process_folder(folder_path):
                     except Exception as e:
                         logging.error(f"Error deleting file {file}: {e}")
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-    
-    if len(sys.argv) != 2:
-        logging.error("Usage: python script.py path/to/folder")
-        sys.exit(1)
-    
-    folder_path = sys.argv[1]
-    
+
+    parser = argparse.ArgumentParser(description="Delete duplicate files based on hash and metadata.")
+    parser.add_argument("-f", "--folder", required=True, help="Path to the folder to process")
+    args = parser.parse_args()
+    folder_path = args.folder
+
     if not os.path.isdir(folder_path):
         logging.error(f"The specified path is not a valid directory: {folder_path}")
         sys.exit(1)
-    
+
     logging.info(f"Processing folder: {folder_path}")
     process_folder(folder_path)
     logging.info("Processing complete.")
