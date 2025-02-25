@@ -31,6 +31,7 @@ cd ArchiveTools
 Converts all subfolders within a specified directory into ZIP files, ensuring data integrity through file hash verification. Successfully converted folders are deleted to save space.
 
 **Usage:** `python convertallfoldertozip.py --folder [target_folder]`
+
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder containing folders to convert into ZIP files.
 
@@ -38,6 +39,7 @@ Converts all subfolders within a specified directory into ZIP files, ensuring da
 Extracts ZIP files to restore the original folder structure. Includes a verification process that compares file hashes to ensure data consistency. Verified ZIP files are deleted automatically.
 
 **Usage:** `python convertallziptofolder.py --folder [target_folder]`
+
 **Flags:**
 - `-f`, `--folder`: SSpecifies the target folder containing ZIP files to extract.
 
@@ -45,6 +47,7 @@ Extracts ZIP files to restore the original folder structure. Includes a verifica
 Flattens complex directory structures by moving all files to the top level of a specified folder. Offers optional renaming to handle naming conflicts and allows setting a flattening depth.
 
 **Usage:** `python flattenfolder.py --folder [target_folder] [--rename] [--depth n]`
+
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to flatten.
 - `-r`, `--rename`: Renames files to avoid conflicts.
@@ -54,6 +57,7 @@ Flattens complex directory structures by moving all files to the top level of a 
 Organizes media files into folders based on their creation date. Uses EXIF data or file metadata to support organization by day, week, month, or year, and manages related sidecar files automatically.
 
 **Usage:** `python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [--rename]`
+
 **Flags:**
 - `-f`, `--folder`: Specifies the folder containing media files.
 - `-d`, `--day`: Organizes files by individual days.
@@ -66,6 +70,7 @@ Organizes media files into folders based on their creation date. Uses EXIF data 
 Scans a directory for duplicate images and videos, retaining only the most relevant file based on EXIF data or metadata (e.g., the oldest photo). Duplicate files are automatically deleted.
 
 **Usage:** `python deleteallduplicate.py --folder [target_folder]`
+
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to scan for duplicate files.
 
@@ -75,11 +80,6 @@ Scans a directory for duplicate images and videos, retaining only the most relev
 ## 💡 Tips
 - Always back up important files before running batch operations.
 - Consider running the scripts on a test directory to become familiar with their behavior.
-
-## 🛠️ Support
-For help, please refer to the documentation or open an issue on the GitHub repository.
-
----
 
 © 2025 gabbro246. All rights reserved.
 
