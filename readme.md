@@ -2,7 +2,7 @@
 
 ArchiveTools is a suite of Python-based tools for streamlining file management tasks. It includes utilities for converting folders to ZIP archives, extracting ZIPs, organizing media by date, detecting and deleting duplicate files, flattening folder structures, and setting file creation and modification dates using EXIF data, sidecar files, or metadata. The tools are designed to simplify managing large file collections and maintaining organized directories.
 
-## 🚀 Installation
+## Installation
 
 - **Python 3.7+** is required.
 - Required Python packages: `pip install pillow colorama`
@@ -12,7 +12,7 @@ git clone https://github.com/gabbro246/ArchiveTools.git
 cd ArchiveTools
 ```
 
-## 📂 Usage
+## Usage
 
 ### Convert all Folders to ZIP with `convertfolderstozips.py`
 This script compresses all folders within a specified directory into individual ZIP archives. It incorporates a verification step to ensure that all files are correctly included and that their hashes match those of the original files. Upon successful verification, the original folder is automatically deleted.
@@ -60,9 +60,5 @@ This script sets the creation and modification dates of media files and their as
 | `exif`      | Only uses EXIF dates, fallback to `default`.          |
 | `sidecar`:  | Only uses sidecar file dates, fallback to `default`.  |
 | `metadata`: | Only uses file metadata dates, fallback to `default`. | 
-
-## 💡 Tips
-- Always back up important files before running batch operations.
-- Consider running the scripts on a test directory to become familiar with their behavior.  
 
 © 2025 gabbro246. All rights reserved.
