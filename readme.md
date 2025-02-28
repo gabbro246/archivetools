@@ -6,12 +6,12 @@ ArchiveTools is a suite of user-friendly Python-based tools designed to simplify
 ### Prerequisites
 - **Python 3.7+**
 - Required Python packages:
-```
-pip install pillow
+```bash
+pip install pillow colorama
 ```
 
 ### Clone the Repository
-```
+```bash
 git clone https://github.com/gabbro246/ArchiveTools.git
 cd ArchiveTools
 ```
@@ -21,33 +21,45 @@ cd ArchiveTools
 ### Convert Folders to ZIP with `convertallfoldertozip.py`
 Automatically compresses all folders within a specified directory, including a verification process to maintain data consistency.
 
-**Usage:** `python convertallfoldertozip.py --folder [target_folder]`
+**Usage:**
+```bash
+python convertallfoldertozip.py --folder [target_folder]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder containing folders to convert into ZIP files.
 
 ### Convert ZIPs to Folders with `convertallziptofolder.py`
-Automaticaly extracts all ZIP files within a specified directory, including a verification process to maintain data consistency.
+Automatically extracts all ZIP files within a specified directory, including a verification process to maintain data consistency.
 
-**Usage:** `python convertallziptofolder.py --folder [target_folder]`
+**Usage:**
+```bash
+python convertallziptofolder.py --folder [target_folder]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder containing ZIP files to extract.
 
 ### Flatten Folder Structure with `flattenfolder.py`
-Moves all files to a single directory level, skips files with name conflicts with optional renaming.
+Moves all files and folders up one level, with an optional depth argument to iterate through nested folders. Skips files with name conflicts or optionally renames them.
 
-**Usage:** `python flattenfolder.py --folder [target_folder] [--rename] [--depth n]`
+**Usage:**
+```bash
+python flattenfolder.py --folder [target_folder] [--rename] [--depth n]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to flatten.
 - `--rename`: Renames files to avoid conflicts.
-- `--depth`: Sets the depth to flatten. Flattens all levels if not set.
+- `--depth`: Sets the depth to flatten.
 
 ### Organize Media by Date with `organizebydate.py`
-Sorts photos and videos into date-based folders using EXIF data or file metadata, with automatic handling of sidecar files. skips files with conflicts, optional rename.
+Sorts media files into date-based folders using EXIF data, file metadata, or sidecar files. Automatically handles sidecar files and offers several date selection modes.
 
-**Usage:** `python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]`
+**Usage:**
+```bash
+python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder containing media files.
@@ -55,35 +67,36 @@ Sorts photos and videos into date-based folders using EXIF data or file metadata
 - `-w`, `--week`: Organizes files by weeks.
 - `-m`, `--month`: Organizes files by months.
 - `-y`, `--year`: Organizes files by years.
-- `--rename`: Renames files if a conflict occurs.
+- `--rename`: Renames files instead of skipping.
 - `--mode`: Specifies the mode for date selection. Options are:
-  - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
-  - `oldest`: Selects the oldest date available from any source.
-  - `exif`: Selects the oldest EXIF date if available.
-  - `sidecar`: Selects the oldest date from sidecar files.
-  - `metadata`: Selects the oldest file creation or modification date.
+  - `default`: EXIF > Sidecar > Metadata.
+  - `oldest`: Selects the oldest date from any source.
+  - `exif`: Only uses EXIF dates.
+  - `sidecar`: Only uses sidecar file dates.
+  - `metadata`: Only uses file metadata dates.
 
 ### Delete Duplicate Files with `deleteallduplicate.py`
-Scans a directory for duplicate files (images and videos) and retains only the preferred file based on EXIF or metadata information.
+Scans a directory for duplicate files and retains only the preferred file based on EXIF or metadata information.
 
-**Usage:** `python deleteallduplicate.py --folder [target_folder]`
+**Usage:**
+```bash
+python deleteallduplicate.py --folder [target_folder]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to scan for duplicate files.
 
 ### Set Files to Selected Date with `setdates.py`
-Sets the file creation and modification dates to a selected date based on various modes, including EXIF data, file metadata, sidecar files, or the oldest available date.
+Sets the file creation and modification dates of media files to a selected date based on various modes, including EXIF data, file metadata, sidecar files, or the oldest available date.
 
-**Usage:** `python setdates.py --folder [target_folder] [--mode mode]`
+**Usage:**
+```bash
+python setdates.py --folder [target_folder] [--mode mode]
+```
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder to process media files.
-- `--mode`: Specifies the mode for date selection. Options are:
-  - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
-  - `oldest`: Selects the oldest date available from any source.
-  - `exif`: Selects the oldest EXIF date if available.
-  - `sidecar`: Selects the oldest date from sidecar files.
-  - `metadata`: Selects the oldest file creation or modification date.
+- `--mode`: Specifies the mode for date selection. Options are the same as in the `organizebydate.py` script.
 
 ---
 

@@ -2,27 +2,27 @@ import os
 import sys
 import argparse
 import datetime
+from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
 import logging
 from PIL import Image, ExifTags
-from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+# Set up logging 
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
 
 # Function to set the selected date to file and its sidecar
 def set_selected_date(file_path, date_info):
     if not date_info:
-        logging.info(f"No date selected for {os.path.basename(file_path)}. Skipping.")
+        logging.info("No date selected. Skipping.", extra={'target': os.path.basename(file_path)})
         return
 
     date_source, selected_date = date_info
-    logging.info(f"{os.path.basename(file_path)} Date set to {selected_date} from {date_source}")
+    logging.info("Dates set to %s (%s)", selected_date, date_source, extra={'target': os.path.basename(file_path)})
 
     # Update file timestamps
     try:
         os.utime(file_path, (selected_date.timestamp(), selected_date.timestamp()))
     except Exception as e:
-        logging.error(f"Failed to set file dates for {os.path.basename(file_path)}: {e}")
+        logging.error("Failed to set file dates: %s", e, extra={'target': os.path.basename(file_path)})
 
     # Update sidecar file timestamps
     base_path, _ = os.path.splitext(file_path)
@@ -32,7 +32,7 @@ def set_selected_date(file_path, date_info):
             try:
                 os.utime(sidecar_path, (selected_date.timestamp(), selected_date.timestamp()))
             except Exception as e:
-                logging.error(f"Failed to set sidecar file dates for {os.path.basename(sidecar_path)}: {e}")
+                logging.error("Failed to set sidecar file dates: %s", e, extra={'target': os.path.basename(sidecar_path)})
 
 
 if __name__ == "__main__":

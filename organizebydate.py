@@ -3,18 +3,21 @@ import shutil
 import argparse
 import datetime
 import calendar
-from PIL import Image
 from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, GERMAN_MONTH_NAMES
+import logging
+from PIL import Image
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
 
 def move_sidecar_files(file_path, target_folder):
     base_name, file_extension = os.path.splitext(os.path.basename(file_path))
     base_path = os.path.splitext(file_path)[0]
     
     for ext in SIDECAR_EXTENSIONS:
-        # Check both naming patterns
         potential_sidecars = [
-            f"{base_path}{ext}",  # filename.sidecarextension
-            f"{file_path}{ext}"   # filename.fileextension.sidecarextension
+            f"{base_path}{ext}",
+            f"{file_path}{ext}"
         ]
         
         for sidecar_path in potential_sidecars:
@@ -24,22 +27,10 @@ def move_sidecar_files(file_path, target_folder):
                 target_sidecar_path = generate_unique_filename(target_sidecar_path)
                 try:
                     shutil.move(sidecar_path, target_sidecar_path)
-                    print(f"Moved sidecar file {sidecar_name} to {target_folder}")
+                    logging.info("Moved sidecar file to %s", target_folder, extra={'target': sidecar_name})
                 except FileNotFoundError as e:
-                    print(f"Error: Sidecar file {sidecar_name} could not be moved. File not found at {sidecar_path}.")
+                    logging.error("Sidecar file could not be moved. File not found.", extra={'target': sidecar_name})
 
-
-def get_week_ranges(iso_year, iso_week):
-    start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
-    end_date = start_date + datetime.timedelta(days=6)
-    
-    # Compare start_date.year and end_date.year directly
-    if start_date.year != end_date.year:
-        # Return two ranges if the week crosses the year boundary
-        return [(start_date, datetime.datetime(year=start_date.year, month=12, day=31).date()), 
-                (datetime.datetime(year=end_date.year, month=1, day=1).date(), end_date)]
-    else:
-        return [(start_date, end_date)]
 
 def generate_unique_filename(target_path):
     base, extension = os.path.splitext(target_path)
@@ -48,6 +39,7 @@ def generate_unique_filename(target_path):
         target_path = f"{base}_{counter}{extension}"
         counter += 1
     return target_path
+
 
 def organize_files(target_dir, mode, rename_files, get_folder_name_func):
     for file_name in os.listdir(target_dir):
@@ -59,7 +51,7 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
             if selected_date_info:
                 date_source, date_used = selected_date_info
             else:
-                print(f"No valid date found for {file_path}")
+                logging.info("No valid date found. Skipping.", extra={'target': file_name})
                 continue
 
             folder_name = get_folder_name_func(date_used)
@@ -72,14 +64,14 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
                     if rename_files:
                         target_path = generate_unique_filename(target_path)
                     else:
-                        print(f"Skipping {file_name} - A file with the same name already exists in {folder_name}.")
+                        logging.info("Skipping - File with same name exists.", extra={'target': file_name})
                         continue
                 try:
                     shutil.move(file_path, target_path)
-                    print(f"{file_name}\tDate used: {date_source} ({date_used})\tMoved to: {folder_name}")
+                    logging.info("Moved file to %s (%s: %s)", folder_name, date_source, date_used.strftime('%Y-%m-%d'), extra={'target': file_name})
                     move_sidecar_files(file_path, target_folder)
                 except FileNotFoundError as e:
-                    print(f"Error: {file_name} could not be moved. File not found at {file_path}.")
+                    logging.error("File could not be moved. File not found.", extra={'target': file_name})
 
 
 def organize_files_by_day(target_dir, mode, rename_files):
@@ -106,6 +98,7 @@ def organize_files_by_month(target_dir, mode, rename_files):
 
 def organize_files_by_year(target_dir, mode, rename_files):
     organize_files(target_dir, mode, rename_files, lambda date: date.strftime('%Y'))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Organize files by day, week, month, or year.')
