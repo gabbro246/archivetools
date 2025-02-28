@@ -30,12 +30,7 @@ This script flattens the folder structure of a specified directory by moving all
 - **Flags:** `-f`, `--folder`; `--rename`; `--depth`;
 
 ### Organize all Media by Date with `organizebydate.py`
-This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes are:
-- By Day: `YYYYMMDD` (e.g., 20250228)
-- By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09)
-- By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar)
-- By Year: `YYYY` (e.g., 2025)
-
+This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes are: By Day: `YYYYMMDD` (e.g., 20250228); By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09); By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar); By Year: `YYYY` (e.g., 2025);
 - **Usage:** `python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]`
 - **Flags:** `-f`, `--folder`; `--mode`; `--rename`; - `-d`, `--day`; - `-w`, `--week`; - `-m`, `--month`; - `-y`, `--year`; 
 
