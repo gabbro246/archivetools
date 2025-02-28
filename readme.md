@@ -50,7 +50,7 @@ python convertallziptofolder.py --folder [target_folder]
 This script scans a specified directory for duplicate media files by comparing their hash values. The preferred file to keep is determined based on metadata or EXIF date, and all detected duplicates are automatically deleted.
 
 ```bash
-python deleteallduplicate.py --folder [target_folder] [--mode mode]
+python deleteduplicates.py --folder [target_folder] [--mode mode]
 ```
 
 ### Set Files to Selected Date
