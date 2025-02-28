@@ -5,7 +5,11 @@ ArchiveTools is a suite of Python-based tools for streamlining file management t
 ## Installation
 
 - **Python 3.7+** is required.
-- Required Python packages: `pip install pillow colorama`
+- Required Python packages:
+
+```bash
+pip install pillow colorama
+```
 
 ```bash
 git clone https://github.com/gabbro246/ArchiveTools.git
