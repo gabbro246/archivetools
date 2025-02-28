@@ -35,6 +35,7 @@ This script organizes media files in a specified folder into subfolders based on
 - By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09)
 - By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar)
 - By Year: `YYYY` (e.g., 2025)
+
 - **Usage:** `python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]`
 - **Flags:** `-f`, `--folder`; `--mode`; `--rename`; - `-d`, `--day`; - `-w`, `--week`; - `-m`, `--month`; - `-y`, `--year`; 
 
