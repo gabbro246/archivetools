@@ -7,9 +7,6 @@ from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_
 import logging
 from PIL import Image
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
-
 def move_sidecar_files(file_path, target_folder):
     base_name, file_extension = os.path.splitext(os.path.basename(file_path))
     base_path = os.path.splitext(file_path)[0]
@@ -22,14 +19,13 @@ def move_sidecar_files(file_path, target_folder):
         
         for sidecar_path in potential_sidecars:
             if os.path.exists(sidecar_path):
-                sidecar_name = os.path.basename(sidecar_path)
-                target_sidecar_path = os.path.join(target_folder, sidecar_name)
+                target_sidecar_path = os.path.join(target_folder, os.path.basename(sidecar_path))
                 target_sidecar_path = generate_unique_filename(target_sidecar_path)
                 try:
                     shutil.move(sidecar_path, target_sidecar_path)
-                    logging.info("Moved sidecar file to %s", target_folder, extra={'target': sidecar_name})
+                    logging.info("Moved sidecar file to %s", target_folder, extra={'target': os.path.basename(sidecar_path)})
                 except FileNotFoundError as e:
-                    logging.error("Sidecar file could not be moved. File not found.", extra={'target': sidecar_name})
+                    logging.error("Sidecar file could not be moved. File not found.", extra={'target': os.path.basename(sidecar_path)})
 
 
 def generate_unique_filename(target_path):
@@ -51,7 +47,7 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
             if selected_date_info:
                 date_source, date_used = selected_date_info
             else:
-                logging.info("No valid date found. Skipping.", extra={'target': file_name})
+                logging.info("No valid date found. Skipping.", extra={'target': os.path.basename(file_name)})
                 continue
 
             folder_name = get_folder_name_func(date_used)
@@ -64,14 +60,14 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
                     if rename_files:
                         target_path = generate_unique_filename(target_path)
                     else:
-                        logging.info("Skipping - File with same name exists.", extra={'target': file_name})
+                        logging.info("Skipping - File with same name exists.", extra={'target': os.path.basename(file_name)})
                         continue
                 try:
                     shutil.move(file_path, target_path)
-                    logging.info("Moved file to %s (%s: %s)", folder_name, date_source, date_used.strftime('%Y-%m-%d'), extra={'target': file_name})
+                    logging.info("Moved file to %s (%s: %s)", folder_name, date_source, date_used.strftime('%Y-%m-%d'), extra={'target': os.path.basename(file_name)})
                     move_sidecar_files(file_path, target_folder)
                 except FileNotFoundError as e:
-                    logging.error("File could not be moved. File not found.", extra={'target': file_name})
+                    logging.error("File could not be moved. File not found.", extra={'target': os.path.basename(file_name)})
 
 
 def organize_files_by_day(target_dir, mode, rename_files):

@@ -3,12 +3,16 @@ import datetime
 from PIL import Image, ExifTags
 import logging
 from colorama import Fore, Style, init
+import hashlib
+
 
 # logs with color
 init(autoreset=True)
 class ColoredFormatter(logging.Formatter):
     COLORS = { 'DEBUG': Fore.CYAN, 'INFO': Fore.GREEN, 'WARNING': Fore.YELLOW, 'ERROR': Fore.RED, 'CRITICAL': Fore.MAGENTA}
     def format(self, record):
+        if not hasattr(record, 'target'):
+            record.target = '-'  # Default value if 'target' is not provided
         log_color = self.COLORS.get(record.levelname, '')
         log_format = f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s{Style.RESET_ALL}"
         formatter = logging.Formatter(log_format)
@@ -111,3 +115,15 @@ def select_date(dates: dict, mode: str = 'default') -> list:
     else:
         logging.error(f"Unknown mode '{mode}' provided. Falling back to default mode.")
         return select_date(dates, 'default')
+    
+def calculate_file_hash(file_path):
+    """Calculate SHA-256 hash of a file."""
+    hash_sha256 = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+    except PermissionError as e:
+        logging.error(f"Permission error while accessing {file_path}: {e}")
+        raise
+    return hash_sha256.hexdigest()

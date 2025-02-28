@@ -5,21 +5,7 @@ import zipfile
 import hashlib
 import logging
 import sys
-
-# Set up logging to display logs in the terminal
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-def calculate_file_hash(file_path):
-    """Calculate SHA-256 hash of a file."""
-    hash_sha256 = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
-    except PermissionError as e:
-        logging.error(f"Permission error while accessing {file_path}: {e}")
-        raise
-    return hash_sha256.hexdigest()
+from _atcore import calculate_file_hash
 
 def verify_zipped_contents(folder_path, zip_file_path):
     """Verify that all files in folder_path match the files in zip_file_path."""
@@ -31,7 +17,7 @@ def verify_zipped_contents(folder_path, zip_file_path):
                     
                     # Check if file exists in the zip
                     if relative_path not in zipf.namelist():
-                        logging.warning(f"Missing file in zip: {relative_path}")
+                        logging.warning(f"Missing file in zip", extra={'target': os.path.basename(relative_path)})
                         return False
 
                     # Verify file hash
@@ -39,11 +25,11 @@ def verify_zipped_contents(folder_path, zip_file_path):
                     zipped_hash = hashlib.sha256(zipf.read(relative_path)).hexdigest()
 
                     if original_hash != zipped_hash:
-                        logging.warning(f"File hash mismatch for {relative_path}")
+                        logging.warning(f"File hash mismatch", extra={'target': os.path.basename(relative_path)})
                         return False
         return True
     except PermissionError as e:
-        logging.error(f"Permission error during verification for {zip_file_path}: {e}")
+        logging.error(f"Permission error during verification: {e}", extra={'target': os.path.basename(zip_file_path)})
         return False
     except Exception as e:
         logging.error(f"Error during verification: {e}")
@@ -57,7 +43,7 @@ def zip_and_verify(directory):
 
         # Skip if zip file already exists
         if os.path.exists(zip_file_path):
-            logging.warning(f"Zip file already exists: {zip_file_path}. Skipping.")
+            logging.warning(f"Zip file already exists. Skipping.", extra={'target': os.path.basename(zip_file_path)})
             continue
 
         try:
@@ -70,16 +56,16 @@ def zip_and_verify(directory):
 
             # Verify and delete the original folder if verification is successful
             if verify_zipped_contents(folder_path, zip_file_path):
-                logging.info(f"Verification successful for {zip_file_path}. Deleting original folder.")
+                logging.info(f"Verification successful. Deleting original folder.", extra={'target': os.path.basename(zip_file_path)})
                 shutil.rmtree(folder_path)
             else:
-                logging.warning(f"Verification failed for {zip_file_path}. Original folder not deleted.")
+                logging.warning(f"Verification failed. Original folder not deleted.", extra={'target': os.path.basename(zip_file_path)})
 
         except PermissionError as e:
-            logging.error(f"Permission error with {folder_path}: {e}")
+            logging.error(f"Permission error: {e}", extra={'target': os.path.basename(folder_path)})
 
         except Exception as e:
-            logging.error(f"Error zipping or verifying folder {folder}: {e}")
+            logging.error(f"Error zipping or verifying folder: {e}", extra={'target': os.path.basename(folder)})
             # Remove the zip file if an error occurred
             if os.path.exists(zip_file_path):
                 os.remove(zip_file_path)

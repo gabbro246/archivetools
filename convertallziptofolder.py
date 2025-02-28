@@ -5,21 +5,7 @@ import zipfile
 import hashlib
 import logging
 import sys
-
-# Set up logging to display logs in the terminal
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-def calculate_file_hash(file_path):
-    """Calculate SHA-256 hash of a file."""
-    hash_sha256 = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
-    except PermissionError as e:
-        logging.error(f"Permission error while accessing {file_path}: {e}")
-        raise
-    return hash_sha256.hexdigest()
+from _atcore import calculate_file_hash
 
 def verify_unzipped_contents(zip_file_path, extracted_folder_path):
     """Verify that all files in zip_file_path match the files in extracted_folder_path."""
@@ -30,7 +16,7 @@ def verify_unzipped_contents(zip_file_path, extracted_folder_path):
                 
                 # Check if the file exists in the extracted folder
                 if not os.path.exists(file_path):
-                    logging.warning(f"Missing file in extracted folder: {zip_info.filename}")
+                    logging.warning(f"Missing file in extracted folder", extra={'target': os.path.basename(zip_info.filename)})
                     return False
 
                 # Verify file hash
@@ -38,11 +24,11 @@ def verify_unzipped_contents(zip_file_path, extracted_folder_path):
                 extracted_hash = calculate_file_hash(file_path)
                 
                 if original_hash != extracted_hash:
-                    logging.warning(f"File hash mismatch for {zip_info.filename}")
+                    logging.warning(f"File hash mismatch", extra={'target': os.path.basename(zip_info.filename)})
                     return False
         return True
     except PermissionError as e:
-        logging.error(f"Permission error during verification for {zip_file_path}: {e}")
+        logging.error(f"Permission error during verification: {e}", extra={'target': os.path.basename(zip_file_path)})
         return False
     except Exception as e:
         logging.error(f"Error during verification: {e}")
@@ -57,7 +43,7 @@ def unzip_and_verify(directory):
         
         # Skip if folder already exists
         if os.path.exists(extracted_folder_path):
-            logging.warning(f"Folder already exists: {folder_name}. Skipping.")
+            logging.warning(f"Folder already exists. Skipping.", extra={'target': os.path.basename(folder_name)})
             continue
         
         try:
@@ -67,19 +53,19 @@ def unzip_and_verify(directory):
             
             # Verify and delete the zip file if verification is successful
             if verify_unzipped_contents(zip_file_path, extracted_folder_path):
-                logging.info(f"Verification successful for {zip_file}. Deleting zip file.")
+                logging.info(f"Verification successful. Deleting zip file.", extra={'target': os.path.basename(zip_file)})
                 os.remove(zip_file_path)
             else:
-                logging.warning(f"Verification failed for {zip_file}. Zip file not deleted.")
+                logging.warning(f"Verification failed. Zip file not deleted.", extra={'target': os.path.basename(zip_file)})
         
         except PermissionError as e:
-            logging.error(f"Permission error with {zip_file}: {e}")
+            logging.error(f"Permission error: {e}", extra={'target': os.path.basename(zip_file)})
             # Clean up partially extracted folder if necessary
             if os.path.exists(extracted_folder_path):
                 shutil.rmtree(extracted_folder_path)
         
         except Exception as e:
-            logging.error(f"Error unzipping or verifying file {zip_file}: {e}")
+            logging.error(f"Error unzipping or verifying file: {e}", extra={'target': os.path.basename(zip_file)})
             # Remove the extracted folder if an error occurred
             if os.path.exists(extracted_folder_path):
                 shutil.rmtree(extracted_folder_path)

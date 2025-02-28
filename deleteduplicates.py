@@ -5,20 +5,7 @@ import logging
 from collections import defaultdict
 import mimetypes
 import argparse
-from _atcore import get_dates_from_file, select_date
-
-
-def get_file_hash(file_path):
-    """Calculate SHA-256 hash of a file."""
-    hash_sha256 = hashlib.sha256()
-    try:
-        with open(file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
-        return hash_sha256.hexdigest()
-    except Exception as e:
-        logging.error(f"Error hashing file {file_path}: {e}", extra={'target': os.path.basename(file_path)})
-        return None
+from _atcore import get_dates_from_file, select_date, calculate_file_hash
 
 
 def prioritize_file(files, mode='default'):
@@ -59,7 +46,7 @@ def process_folder(folder_path, mode='default'):
         for file in files:
             file_path = os.path.join(root, file)
             if mimetypes.guess_type(file_path)[0] in ["image/jpeg", "video/mp4"]:
-                file_hash = get_file_hash(file_path)
+                file_hash = calculate_file_hash(file_path)
                 if file_hash:
                     hash_map[file_hash].append(file_path)
 
