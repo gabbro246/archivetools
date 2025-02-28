@@ -19,42 +19,36 @@ This script organizes media files in a specified folder into subfolders based on
 
 Usage: `python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]`
 
-Flags: `-f`, `--folder`; `--mode`; `--rename`; - `-d`, `--day`; - `-w`, `--week`; - `-m`, `--month`; - `-y`, `--year`;
 
 ### Flatten Folder Structure
 This script flattens the folder structure of a specified directory by moving all files and subfolders up one hierarchy level to the top level of the directory. This operation can be performed iteratively to a specified depth. Optionally, the script can rename conflicting files instead of skipping them.
 
 Usage: `python flattenfolder.py --folder [target_folder] [--rename] [--depth n]`
 
-Flags: `-f`, `--folder`; `--rename`; `--depth`;
 
 ### Convert all Folders to ZIPs
 This script compresses all folders within a specified directory into individual ZIP archives. It incorporates a verification step to ensure that all files are correctly included and that their hashes match those of the original files. Upon successful verification, the original folder is automatically deleted.
 
 Usage: `python convertallfoldertozip.py --folder [target_folder]`
 
-Flags: `-f`, `--folder`;
 
 ### Convert all ZIPs to Folders
 This script extracts all ZIP files within a directory into folders. It includes an integrity verification step to ensure that the extracted files match the original files' hashes. If the verification is successful, the original ZIP files are automatically deleted.
 
 Usage: `python convertallziptofolder.py --folder [target_folder]`
 
-Flags: `-f`, `--folder`;
 
 ### Delete all Duplicate Files
 This script scans a specified directory for duplicate media files by comparing their hash values. The preferred file to keep is determined based on metadata or EXIF date, and all detected duplicates are automatically deleted.
 
 Usage: `python deleteallduplicate.py --folder [target_folder] [--mode mode]`
 
-Flags: `-f`, `--folder`; `--mode`;
 
 ### Set Files to Selected Date
 This script sets the creation and modification dates of media files and their associated sidecar files to a selected date. The date can be chosen based on EXIF data, file metadata, sidecar files, or the oldest available date.
 
 Usage: `python setdates.py --folder [target_folder] [--mode mode]`
 
-Flags: `-f`, `--folder`; `--mode`;
 
 ## Flags
 
@@ -64,6 +58,7 @@ Flags: `-f`, `--folder`; `--mode`;
 | `--mode`         | Mode for date selection `default` `oldest` `exif` `sidecar` `metadata` |  
 | `--rename`       | Renames files with naming conflicts instead of skipping them.          |   
 | `--depth`        | Specifies the hierarchy level up to which the script should operate.   |
+| `-d`, `--day`; - `-w`, `--week`; - `-m`, `--month`; - `-y`, `--year`; |                   |
 
 | `--mode`    | Description                                           |
 | ----------- | ----------------------------------------------------- |
