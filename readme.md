@@ -19,7 +19,7 @@ cd ArchiveTools
 ## 📂 Usage
 
 ### Convert Folders to ZIP with `convertallfoldertozip.py`
-Automatically compresses all folders within a specified directory, including a verification process to maintain data consistency.
+This script is designed to compress all folders in a specified directory into ZIP archives. It includes a verification step to ensure that all files in the folder are properly included and match the hashes of the original files. If the verification succeeds, the original folder is deleted.
 
 **Usage:**
 ```bash
@@ -30,7 +30,7 @@ python convertallfoldertozip.py --folder [target_folder]
 - `-f`, `--folder`: Specifies the target folder containing folders to convert into ZIP files.
 
 ### Convert ZIPs to Folders with `convertallziptofolder.py`
-Automatically extracts all ZIP files within a specified directory, including a verification process to maintain data consistency.
+This script extracts all ZIP files in a directory back into folders. It verifies the integrity of the extraction by checking that the extracted files match the original files' hashes. If verification is successful, the ZIP files are deleted.
 
 **Usage:**
 ```bash
@@ -41,7 +41,7 @@ python convertallziptofolder.py --folder [target_folder]
 - `-f`, `--folder`: Specifies the target folder containing ZIP files to extract.
 
 ### Flatten Folder Structure with `flattenfolder.py`
-Moves all files and folders up one level, with an optional depth argument to iterate through nested folders. Skips files with name conflicts or optionally renames them.
+This script flattens the folder structure of a specified directory by moving all files and folders one hierarchy level up to the top level of the directory. This can be done iteratively to a certain depth. Optionally, it renames conflicting files instead of skipping them.
 
 **Usage:**
 ```bash
@@ -54,7 +54,15 @@ python flattenfolder.py --folder [target_folder] [--rename] [--depth n]
 - `--depth`: Sets the depth to flatten.
 
 ### Organize Media by Date with `organizebydate.py`
-Sorts media files into date-based folders using EXIF data, file metadata, or sidecar files. Automatically handles sidecar files and offers several date selection modes.
+This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can come from EXIF data, sidecar files, or file metadata. You can organize by day, week, month, or year. It also (should) handle sidecar files.
+
+Folder naming conventions:
+
+- By Day: `YYYYMMDD` (e.g., 20250228)
+- By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09)
+- By Month: `YYYYMMDD-YYYYMMDD - [German Month Name]` (e.g., 20250201-20250228 - Februar)
+- By Year: `YYYY` (e.g., 2025)
+
 
 **Usage:**
 ```bash
@@ -76,7 +84,7 @@ python organizebydate.py --folder [target_folder] --[day|week|month|year] [--ren
   - `metadata`: Only uses file metadata dates.
 
 ### Delete Duplicate Files with `deleteallduplicate.py`
-Scans a directory for duplicate files and retains only the preferred file based on EXIF or metadata information.
+This script scans a specified directory for duplicate media files (JPEG images and MP4 videos) by comparing their hash values. The preferred file to keep is selected based on metadata or EXIF date, and the duplicates are deleted.
 
 **Usage:**
 ```bash
@@ -85,9 +93,15 @@ python deleteallduplicate.py --folder [target_folder]
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to scan for duplicate files.
+- `--mode`: Specifies the mode for date selection of the kept file. Options are:
+  - `default`: EXIF > Sidecar > Metadata.
+  - `oldest`: Selects the oldest date from any source.
+  - `exif`: Only uses EXIF dates.
+  - `sidecar`: Only uses sidecar file dates.
+  - `metadata`: Only uses file metadata dates.
 
 ### Set Files to Selected Date with `setdates.py`
-Sets the file creation and modification dates of media files to a selected date based on various modes, including EXIF data, file metadata, sidecar files, or the oldest available date.
+This script sets the creation and modification dates of media files and their associated sidecar files to a selected date, which can be chosen based on EXIF data, file metadata, sidecar files, or the oldest available date.
 
 **Usage:**
 ```bash
@@ -96,9 +110,13 @@ python setdates.py --folder [target_folder] [--mode mode]
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder to process media files.
-- `--mode`: Specifies the mode for date selection. Options are the same as in the `organizebydate.py` script.
+- `--mode`: Specifies the mode for date selection of the kept file. Options are:
+  - `default`: EXIF > Sidecar > Metadata.
+  - `oldest`: Selects the oldest date from any source.
+  - `exif`: Only uses EXIF dates.
+  - `sidecar`: Only uses sidecar file dates.
+  - `metadata`: Only uses file metadata dates.
 
----
 
 ## 💡 Tips
 - Always back up important files before running batch operations.

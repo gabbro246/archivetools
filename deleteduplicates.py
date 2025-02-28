@@ -68,7 +68,7 @@ def process_folder(folder_path, mode='default'):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Delete duplicate files based on hash and metadata.")
     parser.add_argument("-f", "--folder", required=True, help="Path to the folder to process")
-    parser.add_argument("-m", "--mode", default='default', help="Date selection mode: default, oldest, exif, sidecar, metadata")
+    parser.add_argument("--mode", default='default', help="Date selection mode: default, oldest, exif, sidecar, metadata")
     args = parser.parse_args()
     folder_path = args.folder
     mode = args.mode
