@@ -38,7 +38,7 @@ def set_selected_date(file_path, date_info):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Set the selected date for media files and sidecar files.')
     parser.add_argument('-f', '--folder', type=str, required=True, help='Target folder to process')
-    parser.add_argument('-m', '--mode', type=str, default='default', choices=['default', 'oldest', 'exif', 'sidecar', 'metadata'], help='Mode for date selection')
+    parser.add_argument('--mode', type=str, default='default', choices=['default', 'oldest', 'exif', 'sidecar', 'metadata'], help='Mode for date selection')
     args = parser.parse_args()
     
     folder_path = args.folder

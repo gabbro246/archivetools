@@ -67,8 +67,8 @@ def flatten_folder(root_folder, rename_files, depth=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Flatten folder structure by moving files up a specified depth.")
     parser.add_argument("-f", "--folder", required=True, help="Path to the folder to be flattened.")
-    parser.add_argument("-r", "--rename", action="store_true", help="Rename files to resolve naming conflicts instead of skipping them.")
-    parser.add_argument("-d", "--depth", type=int, help="Depth to flatten. If not provided, flattens all levels.")
+    parser.add_argument("--rename", action="store_true", help="Rename files to resolve naming conflicts instead of skipping them.")
+    parser.add_argument("--depth", type=int, help="Depth to flatten. If not provided, flattens all levels.")
     
     args = parser.parse_args()
     flatten_folder(args.folder, args.rename, args.depth)

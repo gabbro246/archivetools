@@ -41,8 +41,8 @@ Moves all files to a single directory level, skips files with name conflicts wit
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to flatten.
-- `-r`, `--rename`: Renames files to avoid conflicts.
-- `-d`, `--depth`: Sets the depth to flatten. Flattens all levels if not set.
+- `--rename`: Renames files to avoid conflicts.
+- `--depth`: Sets the depth to flatten. Flattens all levels if not set.
 
 ### Organize Media by Date with `organizebydate.py`
 Sorts photos and videos into date-based folders using EXIF data or file metadata, with automatic handling of sidecar files. skips files with conflicts, optional rename.
@@ -78,7 +78,7 @@ Sets the file creation and modification dates to a selected date based on variou
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder to process media files.
-- `-m`, `--mode`: Specifies the mode for date selection. Options are:
+- `--mode`: Specifies the mode for date selection. Options are:
   - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
   - `oldest`: Selects the oldest date available from any source.
   - `exif`: Selects the oldest EXIF date if available.
