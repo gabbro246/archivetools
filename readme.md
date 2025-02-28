@@ -24,6 +24,7 @@ This script organizes media files in a specified folder into subfolders based on
 ```bash
 python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]
 ```
+[Flags](readme_flags.md)
 
 ### Flatten Folder Structure
 This script flattens the folder structure of a specified directory by moving all files and subfolders up one hierarchy level to the top level of the directory. This operation can be performed iteratively to a specified depth. Optionally, the script can rename conflicting files instead of skipping them.
@@ -60,26 +61,6 @@ This script sets the creation and modification dates of media files and their as
 python setdates.py --folder [target_folder] [--mode mode]
 ```
 
-## Flags
 
-| Flag             | Description                                                                                 | Required |
-| ---------------- | ------------------------------------------------------------------------------------------- | -------- |
-| `-f`, `--folder` | Path to target folder to process files.                                                     | yes      |
-| `--mode`         | Mode for date selection. One of `default` `oldest` `exif` `sidecar` `metadata` (see below). | no       |
-| `--rename`       | Renames files with naming conflicts instead of skipping them.                               | no       |
-| `--depth`        | Specifies the hierarchy level up to which the script should operate.                        | no       |
-| `-d`, `--day`    |                                                                                             | yes*     |
-| `-w`, `--week`   |                                                                                             | yes*     |
-| `-m`, `--month`  |                                                                                             | yes*     |
-| `-y`, `--year`   |                                                                                             | yes*     |
-
-
-| `--mode`    | Description                                           |
-| ----------- | ----------------------------------------------------- |
-| `default`   | Priority order: EXIF > Sidecar > Metadata.            |
-| `oldest`    | Selects the oldest date from any source.              |
-| `exif`      | Only uses EXIF dates, fallback to `default`.          |
-| `sidecar`:  | Only uses sidecar file dates, fallback to `default`.  |
-| `metadata`: | Only uses file metadata dates, fallback to `default`. | 
 
 © 2025 gabbro246. All rights reserved.
