@@ -18,8 +18,8 @@ cd ArchiveTools
 
 This script compresses all folders within a specified directory into individual ZIP archives. It incorporates a verification step to ensure that all files are correctly included and that their hashes match those of the original files. Upon successful verification, the original folder is automatically deleted.
 
-**Usage:** `python convertallfoldertozip.py --folder [target_folder]`
-**Flags:** `-f`, `--folder`;
+**- Usage:** `python convertallfoldertozip.py --folder [target_folder]`
+**- Flags:** `-f`, `--folder`;
 
 ### Convert all ZIPs to Folders with `convertzipstofolders.py`
 
