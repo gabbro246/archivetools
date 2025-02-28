@@ -4,43 +4,7 @@ import argparse
 import datetime
 import calendar
 from PIL import Image
-from PIL.ExifTags import TAGS
-
-IMAGE_VIDEO_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.mp4', '.mov', '.avi', '.mkv', '.psd', '.heic', '.nef', '.gif', '.bmp', '.flv', '.wmv', '.webm', '.3gp', '.dng' ] 
-SIDECAR_EXTENSIONS =  ['.xmp', '.json', '.txt', '.srt']
-GERMAN_MONTH_NAMES = {
-    1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai', 6: 'Juni',
-    7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Dezember'
-    }
-
-def get_exif_date_taken_or_digitized(file_path):
-    try:
-        image = Image.open(file_path)
-        exif_data = image._getexif()
-        date_taken = None
-        date_digitized = None
-        date_time = None
-        if exif_data is not None:
-            for tag, value in exif_data.items():
-                decoded = TAGS.get(tag, tag)
-                if decoded == 'DateTimeOriginal':
-                    date_taken = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                elif decoded == 'DateTimeDigitized':
-                    date_digitized = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                elif decoded == 'DateTime':
-                    date_time = datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-        # Return the earliest of the available dates
-        dates = [d for d in [date_taken, date_digitized, date_time] if d]
-        return min(dates) if dates else None
-    except Exception as e:
-        pass
-    return None
-
-def get_file_dates(file_path):
-    stat = os.stat(file_path)
-    creation_date = datetime.datetime.fromtimestamp(stat.st_ctime)
-    modification_date = datetime.datetime.fromtimestamp(stat.st_mtime)
-    return creation_date, modification_date
+from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, GERMAN_MONTH_NAMES
 
 def move_sidecar_files(file_path, target_folder):
     base_name, file_extension = os.path.splitext(os.path.basename(file_path))
@@ -85,19 +49,18 @@ def generate_unique_filename(target_path):
         counter += 1
     return target_path
 
-def organize_files_by_day(target_dir, rename_files):
+def organize_files_by_day(target_dir, mode, rename_files):
     for file_name in os.listdir(target_dir):
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
-        if os.path.isfile(file_path) and file_extension in IMAGE_VIDEO_EXTENSIONS:
-            exif_date = get_exif_date_taken_or_digitized(file_path)
-            if exif_date:
-                date_used = exif_date
-                date_source = "EXIF"
+        if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
+            dates = get_dates_from_file(file_path)
+            selected_date_info = select_date(dates, mode=mode)
+            if selected_date_info:
+                date_source, date_used = selected_date_info
             else:
-                creation_date, modification_date = get_file_dates(file_path)
-                date_used = min(creation_date, modification_date)
-                date_source = "Metadata"
+                print(f"No valid date found for {file_path}")
+                continue
 
             folder_name = date_used.strftime('%Y%m%d')
             target_folder = os.path.join(target_dir, folder_name)
@@ -121,19 +84,18 @@ def organize_files_by_day(target_dir, rename_files):
             else:
                 print(f"Warning: {file_name} does not exist at the expected location.")
 
-def organize_files_by_week(target_dir, rename_files):
+def organize_files_by_week(target_dir, mode, rename_files):
     for file_name in os.listdir(target_dir):
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
-        if os.path.isfile(file_path) and file_extension in IMAGE_VIDEO_EXTENSIONS:
-            exif_date = get_exif_date_taken_or_digitized(file_path)
-            if exif_date:
-                date_used = exif_date
-                date_source = "EXIF"
+        if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
+            dates = get_dates_from_file(file_path)
+            selected_date_info = select_date(dates, mode=mode)  
+            if selected_date_info:
+                date_source, date_used = selected_date_info
             else:
-                creation_date, modification_date = get_file_dates(file_path)
-                date_used = min(creation_date, modification_date)
-                date_source = "Metadata"
+                print(f"No valid date found for {file_path}")
+                continue
 
             iso_year, iso_week, _ = date_used.isocalendar()
             week_ranges = get_week_ranges(iso_year, iso_week)
@@ -161,19 +123,18 @@ def organize_files_by_week(target_dir, rename_files):
                 else:
                     print(f"Warning: {file_name} does not exist at the expected location.")
 
-def organize_files_by_month(target_dir, rename_files):
+def organize_files_by_month(target_dir, mode, rename_files):
     for file_name in os.listdir(target_dir):
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
-        if os.path.isfile(file_path) and file_extension in IMAGE_VIDEO_EXTENSIONS:
-            exif_date = get_exif_date_taken_or_digitized(file_path)
-            if exif_date:
-                date_used = exif_date
-                date_source = "EXIF"
+        if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
+            dates = get_dates_from_file(file_path)
+            selected_date_info = select_date(dates, mode=mode) 
+            if selected_date_info:
+                date_source, date_used = selected_date_info
             else:
-                creation_date, modification_date = get_file_dates(file_path)
-                date_used = min(creation_date, modification_date)
-                date_source = "Metadata"
+                print(f"No valid date found for {file_path}")
+                continue
 
             start_date = datetime.datetime(date_used.year, date_used.month, 1)
             end_date = datetime.datetime(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
@@ -200,19 +161,19 @@ def organize_files_by_month(target_dir, rename_files):
             else:
                 print(f"Warning: {file_name} does not exist at the expected location.")
 
-def organize_files_by_year(target_dir, rename_files):
+def organize_files_by_year(target_dir, mode, rename_files):
     for file_name in os.listdir(target_dir):
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
-        if os.path.isfile(file_path) and file_extension in IMAGE_VIDEO_EXTENSIONS:
-            exif_date = get_exif_date_taken_or_digitized(file_path)
-            if exif_date:
-                date_used = exif_date
-                date_source = "EXIF"
+        if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
+            dates = get_dates_from_file(file_path)
+            selected_date_info = select_date(dates, mode=mode) 
+            if selected_date_info:
+                date_source, date_used = selected_date_info
             else:
-                creation_date, modification_date = get_file_dates(file_path)
-                date_used = min(creation_date, modification_date)
-                date_source = "Metadata"
+                print(f"No valid date found for {file_path}")
+                continue
+
 
             folder_name = date_used.strftime('%Y')
             target_folder = os.path.join(target_dir, folder_name)
@@ -236,7 +197,7 @@ def organize_files_by_year(target_dir, rename_files):
             else:
                 print(f"Warning: {file_name} does not exist at the expected location.")
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Organize files by day, week, month, or year.')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-d', '--day', action='store_true', help='Organize files by day')
@@ -245,20 +206,18 @@ def main():
     group.add_argument('-y', '--year', action='store_true', help='Organize files by year')
     parser.add_argument('-f', '--folder', type=str, help='Target folder for organizing files')
     parser.add_argument('--rename', action='store_true', help='Rename files if a file with the same name already exists')
-
+    parser.add_argument('--mode', type=str, default='default', choices=['default', 'oldest', 'exif', 'sidecar', 'metadata'], help='Choose the date selection mode.')
     args = parser.parse_args()
 
     target_dir = args.folder
     rename_files = args.rename
+    mode = args.mode
 
     if args.day:
-        organize_files_by_day(target_dir, rename_files)
+        organize_files_by_day(target_dir, mode, rename_files)
     elif args.week:
-        organize_files_by_week(target_dir, rename_files)
+        organize_files_by_week(target_dir, mode, rename_files)
     elif args.month:
-        organize_files_by_month(target_dir, rename_files)
+        organize_files_by_month(target_dir, mode, rename_files)
     elif args.year:
-        organize_files_by_year(target_dir, rename_files)
-
-if __name__ == "__main__":
-    main()
+        organize_files_by_year(target_dir, mode, rename_files)

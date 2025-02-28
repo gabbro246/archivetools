@@ -19,7 +19,7 @@ cd ArchiveTools
 ## 📂 Usage
 
 ### Convert Folders to ZIP with `convertallfoldertozip.py`
-Automatically compresses all folders within a specified directory into ZIP files, ensuring data integrity through hash-based verification.
+Automatically compresses all folders within a specified directory, including a verification process to maintain data consistency.
 
 **Usage:** `python convertallfoldertozip.py --folder [target_folder]`
 
@@ -27,7 +27,7 @@ Automatically compresses all folders within a specified directory into ZIP files
 - `-f`, `--folder`: Specifies the target folder containing folders to convert into ZIP files.
 
 ### Convert ZIPs to Folders with `convertallziptofolder.py`
-Extracts ZIP files to restore the original folder structure, including a verification process to maintain data consistency.
+Automaticaly extracts all ZIP files within a specified directory, including a verification process to maintain data consistency.
 
 **Usage:** `python convertallziptofolder.py --folder [target_folder]`
 
@@ -35,7 +35,7 @@ Extracts ZIP files to restore the original folder structure, including a verific
 - `-f`, `--folder`: Specifies the target folder containing ZIP files to extract.
 
 ### Flatten Folder Structure with `flattenfolder.py`
-Moves all files to a single directory level, with optional renaming to avoid file name conflicts.
+Moves all files to a single directory level, skips files with name conflicts with optional renaming.
 
 **Usage:** `python flattenfolder.py --folder [target_folder] [--rename] [--depth n]`
 
@@ -44,10 +44,10 @@ Moves all files to a single directory level, with optional renaming to avoid fil
 - `-r`, `--rename`: Renames files to avoid conflicts.
 - `-d`, `--depth`: Sets the depth to flatten. Flattens all levels if not set.
 
-### Organize Media by Date with `organizemediabydate.py`
-Sorts photos and videos into date-based folders using EXIF data or file metadata, with automatic handling of sidecar files (e.g., .xmp, .json, .txt, .srt).
+### Organize Media by Date with `organizebydate.py`
+Sorts photos and videos into date-based folders using EXIF data or file metadata, with automatic handling of sidecar files. skips files with conflicts, optional rename.
 
-**Usage:** `python organizemediabydate.py --folder [target_folder] --[day|week|month|year] [--rename]`
+**Usage:** `python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]`
 
 **Flags:**
 - `-f`, `--folder`: Specifies the folder containing media files.
@@ -56,6 +56,12 @@ Sorts photos and videos into date-based folders using EXIF data or file metadata
 - `-m`, `--month`: Organizes files by months.
 - `-y`, `--year`: Organizes files by years.
 - `--rename`: Renames files if a conflict occurs.
+- `--mode`: Specifies the mode for date selection. Options are:
+  - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
+  - `oldest`: Selects the oldest date available from any source.
+  - `exif`: Selects the oldest EXIF date if available.
+  - `sidecar`: Selects the oldest date from sidecar files.
+  - `metadata`: Selects the oldest file creation or modification date.
 
 ### Delete Duplicate Files with `deleteallduplicate.py`
 Scans a directory for duplicate files (images and videos) and retains only the preferred file based on EXIF or metadata information.
@@ -71,7 +77,7 @@ Sets the file creation and modification dates to a selected date based on variou
 **Usage:** `python setdates.py --folder [target_folder] [--mode mode]`
 
 **Flags:**
-- `-f`, `--folder`: Specifies the target folder to process files.
+- `-f`, `--folder`: Specifies the target folder to process media files.
 - `-m`, `--mode`: Specifies the mode for date selection. Options are:
   - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
   - `oldest`: Selects the oldest date available from any source.
