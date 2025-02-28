@@ -36,14 +36,14 @@ python flattenfolder.py --folder [target_folder] [--rename] [--depth n]
 This script compresses all folders within a specified directory into individual ZIP archives. It incorporates a verification step to ensure that all files are correctly included and that their hashes match those of the original files. Upon successful verification, the original folder is automatically deleted.
 
 ```bash
-python convertallfoldertozip.py --folder [target_folder]
+python convertfolderstozips.py --folder [target_folder]
 ```
 
 ### Convert all ZIPs to Folders
 This script extracts all ZIP files within a directory into folders. It includes an integrity verification step to ensure that the extracted files match the original files' hashes. If the verification is successful, the original ZIP files are automatically deleted.
 
 ```bash
-python convertallziptofolder.py --folder [target_folder]
+python convertzipstofolders.py --folder [target_folder]
 ```
 
 ### Delete all Duplicate Files
