@@ -1,6 +1,6 @@
 # ArchiveTools
 
-ArchiveTools is a suite of user-friendly Python-based tools designed to simplify file management and organization tasks. Whether you need to convert folders to ZIP archives, extract ZIP files back into folders, organize media files by date, clean up duplicate files, flatten folder structures, or set files to the oldest available date, ArchiveTools provides a reliable and efficient solution.
+ArchiveTools is a suite of user-friendly Python-based tools designed to simplify file management and organization tasks. Whether you need to convert folders to ZIP archives, extract ZIP files back into folders, organize media files by date, clean up duplicate files, flatten folder structures, or set files to a specific date using advanced selection modes, ArchiveTools provides a reliable and efficient solution.
 
 ## 🚀 Installation
 ### Prerequisites
@@ -65,13 +65,19 @@ Scans a directory for duplicate files (images and videos) and retains only the p
 **Flags:**
 - `-f`, `--folder`: Specifies the folder to scan for duplicate files.
 
-### Set Files to Oldest Date with `settooldestdate.py`
-Sets the file creation and modification dates to the oldest available date found in EXIF data, file metadata, or associated sidecar files.
+### Set Files to Selected Date with `setdates.py`
+Sets the file creation and modification dates to a selected date based on various modes, including EXIF data, file metadata, sidecar files, or the oldest available date.
 
-**Usage:** `python settooldestdate.py --folder [target_folder]`
+**Usage:** `python setdates.py --folder [target_folder] [--mode mode]`
 
 **Flags:**
 - `-f`, `--folder`: Specifies the target folder to process files.
+- `-m`, `--mode`: Specifies the mode for date selection. Options are:
+  - `default`: Prioritizes EXIF dates, then sidecar, then metadata.
+  - `oldest`: Selects the oldest date available from any source.
+  - `exif`: Selects the oldest EXIF date if available.
+  - `sidecar`: Selects the oldest date from sidecar files.
+  - `metadata`: Selects the oldest file creation or modification date.
 
 ---
 
