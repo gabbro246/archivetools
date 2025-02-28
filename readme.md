@@ -3,11 +3,15 @@
 ArchiveTools is a suite of Python-based tools for streamlining file management tasks. It includes utilities for converting folders to ZIP archives, extracting ZIPs, organizing media by date, detecting and deleting duplicate files, flattening folder structures, and setting file creation and modification dates using EXIF data, sidecar files, or metadata. The tools are designed to simplify managing large file collections and maintaining organized directories.
 
 ## Usage
-for installation see: [ArchiveTools Installation](readme_installation.md) 
-for more details about flags see: [ArchiveTools Flags](readme_flags.md)
+- for installation see: [ArchiveTools Installation](readme_installation.md) 
+- for more details about flags see: [ArchiveTools Flags](readme_flags.md)
 
 ### Organize all Media by Date
-This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes are: By Day: `YYYYMMDD` (e.g., 20250228); By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09); By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar); By Year: `YYYY` (e.g., 2025);
+This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes are: 
+- By Day: `YYYYMMDD` (e.g., 20250228)
+- By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09)
+- By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar)
+- By Year: `YYYY` (e.g., 2025);
 
 ```bash
 python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]
