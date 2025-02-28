@@ -49,4 +49,5 @@ This script sets the creation and modification dates of media files and their as
 python setdates.py --folder [target_folder] [--mode mode]
 ```
 
+---
 © 2025 gabbro246. All rights reserved.
