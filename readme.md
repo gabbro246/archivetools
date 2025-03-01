@@ -7,8 +7,7 @@ ArchiveTools is a suite of Python-based tools for streamlining file management t
 - for more details about flags see: [Flags](readme_flags.md)
 
 ### Organize all Media by Date
-This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes are: 
-By Day: `YYYYMMDD` (e.g., 20250228); By Week: `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09); By Month: `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar); By Year: `YYYY` (e.g., 2025);
+This script organizes media files in a specified folder into subfolders based on their creation or modification dates. The date used for organization can be sourced from EXIF data, sidecar files, or file metadata. You can organize files by day, week, month, or year. The script also (intends to) handle sidecar files. The available grouping modes can be found in [Flags](readme_flags.md).
 
 ```bash
 python organizebydate.py --folder [target_folder] --[day|week|month|year] [--rename] [--mode mode]
