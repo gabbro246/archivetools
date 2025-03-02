@@ -41,7 +41,7 @@ def get_dates_from_file(file_path):
                     if decoded in ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]:
                         dates[decoded] = datetime.datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
     except Exception as e:
-        logging.warning(f"{os.path.basename(file_path)} could not get EXIF data: {e}")
+        logging.warning(f"{could not get EXIF data: {e}", extra={'target': os.path.basename(file_path)})
 
     # Get file creation and modification dates
     try:
@@ -49,7 +49,7 @@ def get_dates_from_file(file_path):
         dates['Created'] = datetime.datetime.fromtimestamp(stat.st_ctime)
         dates['Modified'] = datetime.datetime.fromtimestamp(stat.st_mtime)
     except Exception as e:
-        logging.warning(f"{os.path.basename(file_path)} could not get file dates: {e}")
+        logging.warning(f"could not get file dates: {e}", extra={'target': os.path.basename(file_path)})
 
     # Get dates from sidecar files
     base_path, file_ext = os.path.splitext(file_path)
@@ -67,7 +67,7 @@ def get_dates_from_file(file_path):
                                 except ValueError:
                                     pass
                 except Exception as e:
-                    logging.warning(f"{os.path.basename(sidecar_path)} could not read sidecar file: {e}")
+                    logging.warning(f"could not read sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
 
     return dates
 
@@ -124,6 +124,6 @@ def calculate_file_hash(file_path):
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_sha256.update(chunk)
     except PermissionError as e:
-        logging.error(f"Permission error while accessing {file_path}: {e}")
+        logging.error(f"Permission error while accessing: {e}", extra={'target': os.path.basename(file_path)})
         raise
     return hash_sha256.hexdigest()
