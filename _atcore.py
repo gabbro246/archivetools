@@ -41,7 +41,7 @@ def get_dates_from_file(file_path):
                     if decoded in ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]:
                         dates[decoded] = datetime.datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
     except Exception as e:
-        logging.warning(f"{could not get EXIF data: {e}", extra={'target': os.path.basename(file_path)})
+        logging.warning(f"could not get EXIF data: {e}", extra={'target': os.path.basename(file_path)})
 
     # Get file creation and modification dates
     try:
