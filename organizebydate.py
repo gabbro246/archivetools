@@ -60,7 +60,7 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
                     if rename_files:
                         target_path = generate_unique_filename(target_path)
                     else:
-                        logging.info("Skipping - File with same name exists.", extra={'target': os.path.basename(file_name)})
+                        logging.warning("Skipping - File with same name exists.", extra={'target': os.path.basename(file_name)})
                         continue
                 try:
                     shutil.move(file_path, target_path)
