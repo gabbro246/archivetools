@@ -1,21 +1,29 @@
-## ArchiveTools Flags
+## ArchiveTools Flags Overview
 
-| Flag             | Description                                                                                 | Required |
-| ---------------- | ------------------------------------------------------------------------------------------- | -------- |
-| `-f`, `--folder` | Path to target folder to process files.                                                     | yes      |
-| `--mode`         | Mode for date selection. One of `default` `oldest` `exif` `sidecar` `metadata` (see below). | no       |
-| `--rename`       | Renames files with naming conflicts instead of skipping them.                               | no       |
-| `--depth`        | Specifies the hierarchy level up to which the script should operate.                        | no       |
-| `-d`, `--day`    | `YYYYMMDD` (e.g., 20250228)                                                                 | yes*     |
-| `-w`, `--week`   | `YYYYMMDD-YYYYMMDD - KWww` (e.g., 20250223-20250301 - KW09)                                 | yes*     |
-| `-m`, `--month`  | `YYYYMMDD-YYYYMMDD - [Month Name]` (e.g., 20250201-20250228 - Februar)                      | yes*     |
-| `-y`, `--year`   | `YYYY` (e.g., 2025)                                                                         | yes*     |
+| Flag               | Description                                                                                             | Required In              | Optional In                              |
+|--------------------|---------------------------------------------------------------------------------------------------------|--------------------------|------------------------------------------|
+| `-f`, `--folder`   | Path to target folder to process.                                                                       | All                      |                                          |
+| `--mode`           | Mode for date selection. One of `default`, `oldest`, `newest`, `exif`, `ffprobe`, `sidecar`, `filename`, `folder`, `metadata`. | `organizebydate.py`, `setdates.py`, `deleteduplicates.py` |                                          |
+| `--rename`         | Rename files instead of skipping them if duplicates exist.                                               |                          | `organizebydate.py`, `flattenfolder.py`  |
+| `--depth`          | Specifies folder flattening depth.                                                                       |                          | `flattenfolder.py`                       |
+| `-d`, `--day`      | Organize by day (e.g. `YYYYMMDD`).                                                                      | `organizebydate.py`      |                                          |
+| `-w`, `--week`     | Organize by ISO week (e.g. `YYYYMMDD-YYYYMMDD - KWww`).                                                  | `organizebydate.py`      |                                          |
+| `-m`, `--month`    | Organize by month (e.g. `YYYYMMDD-YYYYMMDD - Februar`).                                                 | `organizebydate.py`      |                                          |
+| `-y`, `--year`     | Organize by year (e.g. `YYYY`).                                                                         | `organizebydate.py`      |                                          |
+| `--force`          | Force overwrite of all timestamps, regardless of existing date values.                                 |                          | `setdates.py`                            |
+| `--dry-run`        | Preview changes without modifying files.                                                                |                          | `setdates.py`                            |
 
+### `--mode` Options
 
-| `--mode`    | Description                                           |
-| ----------- | ----------------------------------------------------- |
-| `default`   | Priority order: EXIF > Sidecar > Metadata.            |
-| `oldest`    | Selects the oldest date from any source.              |
-| `exif`      | Only uses EXIF dates, fallback to `default`.          |
-| `sidecar`:  | Only uses sidecar file dates, fallback to `default`.  |
-| `metadata`: | Only uses file metadata dates, fallback to `default`. | 
+| Mode         | Description                                                                 |
+|--------------|-----------------------------------------------------------------------------|
+| `default`    | Heuristic: FFprobe > EXIF > Filename > Folder > Sidecar > Metadata.         |
+| `oldest`     | Selects the oldest date from any source.                                    |
+| `newest`     | Selects the newest date from any source.                                    |
+| `exif`       | Uses EXIF dates only, fallback to `default`.                                |
+| `ffprobe`    | Uses FFprobe metadata from video files, fallback to `default`.              |
+| `sidecar`    | Uses sidecar file dates, fallback to `default`.                             |
+| `filename`   | Extracts date from filename, fallback to `default`.                         |
+| `folder`     | Extracts date from parent folder name, fallback to `default`.               |
+| `metadata`   | Uses file timestamps (Created, Modified), fallback to `default`.            |
+

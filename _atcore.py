@@ -4,6 +4,9 @@ from PIL import Image, ExifTags
 import logging
 from colorama import Fore, Style, init
 import hashlib
+import subprocess
+import re
+
 
 
 # logs with color
@@ -51,6 +54,34 @@ def get_dates_from_file(file_path):
         dates['Modified'] = datetime.datetime.fromtimestamp(stat.st_mtime)
     except Exception as e:
         logging.warning(f"could not get file dates: {e}", extra={'target': os.path.basename(file_path)})
+        
+    # Get creation_time from video metadata via ffprobe
+    try:
+        if os.path.splitext(file_path)[1].lower() in VIDEO_EXTENSIONS:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "format_tags=creation_time",
+                 "-of", "default=noprint_wrappers=1:nokey=0", file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            for line in result.stdout.splitlines():
+                if 'creation_time=' in line:
+                    raw_date = line.split('=')[1].strip()
+                    try:
+                        parsed_date = datetime.datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                        dates['CreationTime'] = parsed_date
+                    except ValueError:
+                        # handle alternate formats if needed
+                        try:
+                            parsed_date = datetime.datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+                            dates['FFprobe CreationTime'] = parsed_date
+                        except Exception:
+                            pass
+    except Exception as e:
+        logging.warning(f"ffprobe failed: {e}", extra={'target': os.path.basename(file_path)})
+
 
     # Get dates from sidecar files
     base_path, file_ext = os.path.splitext(file_path)
@@ -69,53 +100,147 @@ def get_dates_from_file(file_path):
                                     pass
                 except Exception as e:
                     logging.warning(f"could not read sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
+                    
+    # Extract date from filename using common patterns
+    filename = os.path.basename(file_path)
+    date_patterns = [
+        (r"(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})", "%Y%m%d%H%M%S"),  # e.g. IMG_2023_04_05_14_52_10
+        (r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})", "%Y%m%d%H%M%S"),    # e.g. 20230405-145210 or _145210
+        (r"(\d{4})[._-](\d{2})[._-](\d{2})", "%Y%m%d"),                        # e.g. 2023-04-05
+        (r"(\d{4})(\d{2})(\d{2})", "%Y%m%d"),                                  # e.g. 20230405
+    ]
+    for pattern, fmt in date_patterns:
+        match = re.search(pattern, filename)
+        if match:
+            try:
+                extracted = ''.join(match.groups())
+                parsed_date = datetime.datetime.strptime(extracted, fmt)
+                dates['Filename'] = parsed_date
+                break
+            except ValueError:
+                continue
+            
+    # Extract date from parent folder name
+    folder_name = os.path.basename(os.path.dirname(file_path))
+    try:
+        # Day: YYYYMMDD
+        if re.match(r"^\d{8}$", folder_name):
+            parsed_date = datetime.datetime.strptime(folder_name, "%Y%m%d")
+            dates["FolderDate"] = parsed_date
+
+        # Year: YYYY
+        elif re.match(r"^\d{4}$", folder_name):
+            parsed_date = datetime.datetime.strptime(folder_name, "%Y")
+            dates["FolderDate"] = parsed_date
+
+        # Week/Month: YYYYMMDD-YYYYMMDD - ...
+        elif re.match(r"^\d{8}-\d{8}", folder_name):
+            start_str, end_str = folder_name.split("-")[0], folder_name.split("-")[1].split(" ")[0]
+            start_date = datetime.datetime.strptime(start_str, "%Y%m%d")
+            end_date = datetime.datetime.strptime(end_str, "%Y%m%d")
+            dates["FolderDateRangeStart"] = start_date
+            dates["FolderDateRangeEnd"] = end_date
+    except Exception as e:
+        logging.warning(f"Could not extract date from folder name: {e}", extra={'target': folder_name})
+
+
 
     return dates
 
 
+
+    
+
 def select_date(dates: dict, mode: str = 'default') -> list:
-    # Define date categories
+    """
+    Selects a date from the dictionary of found dates based on the selected mode.
+    Returns a list [label, datetime] or None if no valid date was found.
+    """
+
+    # Gruppiere nach Herkunft
     exif_dates = {k: v for k, v in dates.items() if 'DateTime' in k}
     sidecar_dates = {k: v for k, v in dates.items() if 'Sidecar' in k}
     metadata_dates = {k: v for k, v in dates.items() if k in ['Created', 'Modified']}
+    ffprobe_dates = {k: v for k, v in dates.items() if 'CreationTime' in k}
+    filename_dates = {k: v for k, v in dates.items() if k == 'Filename'}
+    folder_dates = {k: v for k, v in dates.items() if k.startswith('FolderDate')}
 
-    # Helper function to get the oldest date
-    def get_oldest_date(date_dict: dict) -> list:
+    def get_oldest(date_dict: dict):
         if date_dict:
-            oldest = min(date_dict.items(), key=lambda x: x[1])
-            return [oldest[0], oldest[1]]
+            return min(date_dict.items(), key=lambda x: x[1])
+        return None
+
+    def get_newest(date_dict: dict):
+        if date_dict:
+            return max(date_dict.items(), key=lambda x: x[1])
         return None
 
     if mode == 'default':
-        return get_oldest_date(exif_dates) or get_oldest_date(sidecar_dates) or get_oldest_date(metadata_dates)
+        return (
+            get_oldest(ffprobe_dates) or
+            get_oldest(exif_dates) or
+            get_oldest(filename_dates) or
+            get_oldest(folder_dates) or
+            get_oldest(sidecar_dates) or
+            get_oldest(metadata_dates)
+        )
 
     elif mode == 'oldest':
-        return get_oldest_date(dates)
+        return get_oldest(dates)
+
+    elif mode == 'newest':
+        return get_newest(dates)
 
     elif mode == 'exif':
-        result = get_oldest_date(exif_dates)
+        result = get_oldest(exif_dates)
         if result:
             return result
-        logging.warning("No EXIF dates found, falling back to default mode.")
+        logging.warning("No EXIF dates found, falling back to default.")
+        return select_date(dates, 'default')
+
+    elif mode == 'ffprobe':
+        result = get_oldest(ffprobe_dates)
+        if result:
+            return result
+        logging.warning("No ffprobe CreationTime found, falling back to default.")
         return select_date(dates, 'default')
 
     elif mode == 'sidecar':
-        result = get_oldest_date(sidecar_dates)
+        result = get_oldest(sidecar_dates)
         if result:
             return result
-        logging.warning("No Sidecar dates found, falling back to default mode.")
+        logging.warning("No sidecar dates found, falling back to default.")
+        return select_date(dates, 'default')
+
+    elif mode == 'filename':
+        result = get_oldest(filename_dates)
+        if result:
+            return result
+        logging.warning("No filename dates found, falling back to default.")
+        return select_date(dates, 'default')
+
+    elif mode == 'folder':
+        result = get_oldest(folder_dates)
+        if result:
+            return result
+        logging.warning("No folder dates found, falling back to default.")
         return select_date(dates, 'default')
 
     elif mode == 'metadata':
-        result = get_oldest_date(metadata_dates)
+        result = get_oldest(metadata_dates)
         if result:
             return result
-        logging.warning("No Metadata dates found, falling back to default mode.")
+        logging.warning("No metadata dates found, falling back to default.")
         return select_date(dates, 'default')
 
     else:
-        logging.error(f"Unknown mode '{mode}' provided. Falling back to default mode.")
+        logging.error(f"Unknown mode '{mode}' provided. Falling back to default.")
         return select_date(dates, 'default')
+
+    
+    
+    
+    
     
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of a file."""
