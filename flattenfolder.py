@@ -1,7 +1,7 @@
 import os
 import shutil
 import argparse
-from _atcore import logging
+from _atcore import __version__, logging
 
 
 def get_new_name(base, extension, target_folder):
@@ -68,9 +68,14 @@ def flatten_folder(root_folder, rename_files, depth=None):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Flatten folder structure by moving files up a specified depth.")
-    parser.add_argument("-f", "--folder", required=True, help="Path to the folder to be flattened.")
-    parser.add_argument("--rename", action="store_true", help="Rename files instead of skipping them.")
-    parser.add_argument("--depth", type=int, help="Depth to flatten.")
+    parser = argparse.ArgumentParser(
+        description="Flattens a folder structure by moving all files from subfolders into the root folder. Can optionally rename conflicting files and limit the operation by depth.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument("-f", "--folder", required=True, help="Path to the folder to process")
+    parser.add_argument("--rename", action="store_true", help="Rename files instead of skipping them")
+    parser.add_argument("--depth", type=int, help="Depth to flatten")
     args = parser.parse_args()
+    
     flatten_folder(args.folder, args.rename, args.depth)

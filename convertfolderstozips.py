@@ -5,7 +5,7 @@ import zipfile
 import hashlib
 import logging
 import sys
-from _atcore import calculate_file_hash
+from _atcore import __version__, calculate_file_hash
 
 def verify_zipped_contents(folder_path, zip_file_path):
     """Verify that all files in folder_path match the files in zip_file_path."""
@@ -71,8 +71,12 @@ def zip_and_verify(directory):
                 os.remove(zip_file_path)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Convert all folders to zip archives.')
-    parser.add_argument('-f', '--folder', type=str, help='Target folder to convert')
+    parser = argparse.ArgumentParser(
+        description="Compresses each folder in the target directory into a separate ZIP archive. Verifies the integrity of each archive before deleting the original folder.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument('-f', '--folder', type=str, help='Path to the folder to process')
     args = parser.parse_args()
 
     directory_to_zip = args.folder

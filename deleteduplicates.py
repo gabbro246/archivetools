@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 import mimetypes
 import argparse
-from _atcore import get_dates_from_file, select_date, calculate_file_hash
+from _atcore import __version__, get_dates_from_file, select_date, calculate_file_hash
 
 
 def prioritize_file(files, mode='default'):
@@ -66,7 +66,11 @@ def process_folder(folder_path, mode='default'):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Delete duplicate files based on hash and metadata.")
+    parser = argparse.ArgumentParser(
+        description="Scans a folder for duplicate image or video files based on file hash. Keeps the most relevant version based on metadata or timestamp and deletes the rest.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
     parser.add_argument("-f", "--folder", required=True, help="Path to the folder to process")
     parser.add_argument("--mode", default='default', help="Date selection mode: default, oldest, exif, sidecar, metadata")
     args = parser.parse_args()

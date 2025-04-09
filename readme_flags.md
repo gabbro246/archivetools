@@ -1,17 +1,18 @@
 ## ArchiveTools Flags Overview
 
-| Flag               | Description                                                                                             | Required In              | Optional In                              |
-|--------------------|---------------------------------------------------------------------------------------------------------|--------------------------|------------------------------------------|
-| `-f`, `--folder`   | Path to target folder to process.                                                                       | All                      |                                          |
-| `--mode`           | Mode for date selection. One of `default`, `oldest`, `newest`, `exif`, `ffprobe`, `sidecar`, `filename`, `folder`, `metadata`. | `organizebydate.py`, `setdates.py`, `deleteduplicates.py` |                                          |
-| `--rename`         | Rename files instead of skipping them if duplicates exist.                                               |                          | `organizebydate.py`, `flattenfolder.py`  |
-| `--depth`          | Specifies folder flattening depth.                                                                       |                          | `flattenfolder.py`                       |
-| `-d`, `--day`      | Organize by day (e.g. `YYYYMMDD`).                                                                      | `organizebydate.py`      |                                          |
-| `-w`, `--week`     | Organize by ISO week (e.g. `YYYYMMDD-YYYYMMDD - KWww`).                                                  | `organizebydate.py`      |                                          |
-| `-m`, `--month`    | Organize by month (e.g. `YYYYMMDD-YYYYMMDD - Februar`).                                                 | `organizebydate.py`      |                                          |
-| `-y`, `--year`     | Organize by year (e.g. `YYYY`).                                                                         | `organizebydate.py`      |                                          |
-| `--force`          | Force overwrite of all timestamps, regardless of existing date values.                                 |                          | `setdates.py`                            |
-| `--dry-run`        | Preview changes without modifying files.                                                                |                          | `setdates.py`                            |
+| Flag               | Description                                                                                                                       | Required | Scripts                                  |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------|----------|------------------------------------------|
+| `-v`, `--version`  |                                                                                                                                   |          | All                                      |
+| `-f`, `--folder`   | Path to target folder to process.                                                                                                 | yes      | All                                      |
+| `--mode`           | Mode for date selection. One of `default`, `oldest`, `newest`, `exif`, `ffprobe`, `sidecar`, `filename`, `folder`, `metadata`.    |          | `organizebydate.py`, `setdates.py`, `deleteduplicates.py`|
+| `--rename`         | Rename files instead of skipping them if duplicates exist.                                                                        |          | `organizebydate.py`, `flattenfolder.py`  |
+| `--depth`          | Specifies folder flattening depth.                                                                                                |          | `flattenfolder.py`                       |
+| `-d`, `--day`      | Organize by day (e.g. `YYYYMMDD`).                                                                                                | yes*     | `organizebydate.py`                      |
+| `-w`, `--week`     | Organize by ISO week (e.g. `YYYYMMDD-YYYYMMDD - KWww`).                                                                           | yes*     | `organizebydate.py`                      |
+| `-m`, `--month`    | Organize by month (e.g. `YYYYMMDD-YYYYMMDD - Februar`).                                                                           | yes*     | `organizebydate.py`                      |
+| `-y`, `--year`     | Organize by year (e.g. `YYYY`).                                                                                                   | yes*     | `organizebydate.py`                      |
+| `--force`          | Force overwrite of all timestamps, regardless of existing date values.                                                            |          | `setdates.py`                            |
+| `--dry-run`        | Preview changes without modifying files.                                                                                          |          | `setdates.py`                            |
 
 ### `--mode` Options
 

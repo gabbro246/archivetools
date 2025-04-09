@@ -5,7 +5,7 @@ import zipfile
 import hashlib
 import logging
 import sys
-from _atcore import calculate_file_hash
+from _atcore import __version__, calculate_file_hash
 
 def verify_unzipped_contents(zip_file_path, extracted_folder_path):
     """Verify that all files in zip_file_path match the files in extracted_folder_path."""
@@ -71,8 +71,12 @@ def unzip_and_verify(directory):
                 shutil.rmtree(extracted_folder_path)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Convert all zip files to folders.')
-    parser.add_argument('-f', '--folder', type=str, help='Target folder containing zip files')
+    parser = argparse.ArgumentParser(
+        description="Extracts all ZIP archives in the target folder into folders with matching names. Verifies that all extracted files match the original content before deleting the ZIP file.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument('-f', '--folder', type=str, help='Path to the folder to process')
     args = parser.parse_args()
 
     directory_to_unzip = args.folder

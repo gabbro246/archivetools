@@ -6,7 +6,7 @@ import logging
 import subprocess
 from PIL import Image, ExifTags
 import piexif
-from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
+from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
@@ -108,15 +108,16 @@ def set_selected_date(file_path, selected_date_info, current_dates, force=False,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Set the selected date for media files and sidecar files.',
+        description="Sets the creation and modification timestamps of media files and sidecar files to a selected date. Date source can be EXIF, metadata, sidecar, or filename. Supports dry run and force mode.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('-f', '--folder', type=str, required=True, help='Target folder to process')
-    parser.add_argument('--mode', type=str, default='default', choices=[
-        'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
-    ], help='Date selection mode')
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
     parser.add_argument('--force', action='store_true', help='Force overwrite of all timestamps regardless of age')
     parser.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
+    parser.add_argument('--mode', type=str, default='default', choices=[
+        'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
+    ], help='Date selection strategy to use.')
     args = parser.parse_args()
 
     folder_path = args.folder

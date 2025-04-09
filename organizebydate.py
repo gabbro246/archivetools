@@ -3,7 +3,7 @@ import shutil
 import argparse
 import datetime
 import calendar
-from _atcore import get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, GERMAN_MONTH_NAMES
+from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, GERMAN_MONTH_NAMES
 import logging
 from PIL import Image
 
@@ -101,31 +101,20 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Organize files by day, week, month, or year.',
+        description="Organizes media files into subfolders by day, week, month, or year based on metadata, EXIF data, filenames, or sidecar information. Automatically moves matching sidecar files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
+    parser.add_argument('--rename', action='store_true', help='Rename files if duplicates are found')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-d', '--day', action='store_true', help='Organize files by day')
     group.add_argument('-w', '--week', action='store_true', help='Organize files by week')
     group.add_argument('-m', '--month', action='store_true', help='Organize files by month')
     group.add_argument('-y', '--year', action='store_true', help='Organize files by year')
-
-    parser.add_argument('-f', '--folder', type=str, required=True, help='Target folder to organize')
-    parser.add_argument('--rename', action='store_true', help='Rename files if duplicates are found')
-
-    parser.add_argument(
-        '--mode',
-        type=str,
-        default='default',
-        choices=[
-            'default', 'oldest', 'newest',
-            'exif', 'ffprobe', 'sidecar',
-            'filename', 'folder', 'metadata'
-        ],
-        help='Date selection strategy to use.'
-    )
-
+    parser.add_argument('--mode', type=str, default='default', choices=[
+            'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
+        ], help='Date selection strategy to use.')
     args = parser.parse_args()
 
     target_dir = args.folder
