@@ -43,7 +43,6 @@ def organize_files(target_dir, mode, rename_files, get_folder_name_func):
         file_extension = os.path.splitext(file_name)[1].lower()
         if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
             dates = get_dates_from_file(file_path)
-            logging.info("Dates %s", dates, extra={'target': os.path.basename(file_name)})
             selected_date_info = select_date(dates, mode=mode)
             if selected_date_info:
                 date_source, date_used = selected_date_info
