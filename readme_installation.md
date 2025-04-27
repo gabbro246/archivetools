@@ -6,7 +6,7 @@
 - Installing Required Python packages:
 
 ```bash
-pip install pillow colorama
+pip install pillow colorama pyzipper piexif
 ```
 
 ## Clone Repository
@@ -16,7 +16,7 @@ git clone https://github.com/gabbro246/ArchiveTools.git
 cd ArchiveTools
 ```
 
-## Add to path - Windows (optional)
+## Add to Path - Windows (optional)
 
 To add a directory to the system `Path` using PowerShell, open PowerShell as Administrator and run:
 
@@ -26,18 +26,29 @@ $envPath = [System.Environment]::GetEnvironmentVariable("Path", [System.Environm
 ```
 
 Replace `C:\Scripts` with the actual directory you want to add.
-Make Python scripts directly executable
+
+Make Python scripts directly executable:
 
 ```powershell
 [System.Environment]::SetEnvironmentVariable("PATHEXT", $env:PATHEXT + ";.PY", [System.EnvironmentVariableTarget]::Machine)
 ```
+
 - Restart your terminal or PC for the changes to take effect.
 
 ## Run ArchiveTools
 
-Once installed, executable and in your path, you can execute the script:
+Once installed and optionally added to your path, you can execute the scripts like this:
 
 ```bash
-script.py.py
+python scriptname.py --folder [target_folder] [options]
 ```
+
+For example:
+
+```bash
+python organizebydate.py --folder "C:\Users\User\Pictures" --month
+```
+
+---
+© 2025 gabbro246. All rights reserved.
 
