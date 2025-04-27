@@ -3,7 +3,7 @@ import shutil
 import argparse
 import datetime
 import calendar
-from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, GERMAN_MONTH_NAMES
+from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, MONTH_NAMES, WEEK_PREFIX
 import logging
 from PIL import Image
 
@@ -79,7 +79,7 @@ def organize_files_by_week(target_dir, mode, rename_files, midnight_shift):
         iso_year, iso_week, _ = date_used.isocalendar()
         start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
         end_date = start_date + datetime.timedelta(days=6)
-        return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - KW{iso_week:02d}'
+        return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {WEEK_PREFIX}{iso_week:02d}'
     organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name)
 
 
@@ -87,7 +87,7 @@ def organize_files_by_month(target_dir, mode, rename_files, midnight_shift):
     def get_folder_name(date_used):
         start_date = datetime.datetime(date_used.year, date_used.month, 1)
         end_date = datetime.datetime(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
-        month_name_german = GERMAN_MONTH_NAMES[date_used.month]
+        month_name_german = MONTH_NAMES[date_used.month]
         return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {month_name_german}'
     organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name)
 
