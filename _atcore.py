@@ -1,4 +1,4 @@
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 import os
 import datetime
@@ -8,6 +8,8 @@ from colorama import Fore, Style, init
 import hashlib
 import subprocess
 import re
+
+
 
 
 
@@ -26,12 +28,20 @@ handler = logging.StreamHandler()
 handler.setFormatter(ColoredFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
+
+
+
+
 # definitions
 SIDECAR_EXTENSIONS = ['.xmp', '.json', '.txt', '.srt', '.xml', '.csv', '.ini', '.yaml', '.yml', '.md', '.log', '.nfo', '.sub', '.idx', '.mta', '.vtt', '.lrc']
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.psd', '.heic', '.nef', '.gif', '.bmp', '.dng', '.raw', '.svg', '.webp', '.cr2', '.arw', '.orf', '.rw2', '.ico', '.eps', '.ai', '.indd']
 VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.webm', '.3gp', '.mpeg', '.mpg', '.m4v', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.rm', '.divx', '.asf', '.f4v', '.m2ts']
 MEDIA_EXTENSIONS = list(set(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS))
 GERMAN_MONTH_NAMES = {1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai', 6: 'Juni', 7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Dezember'}
+
+
+
+
 
 # Function to get all available dates from a file and its sidecar
 def get_dates_from_file(file_path):
@@ -145,21 +155,19 @@ def get_dates_from_file(file_path):
     except Exception as e:
         logging.warning(f"Could not extract date from folder name: {e}", extra={'target': folder_name})
 
-
-
     return dates
 
 
 
     
 
-def select_date(dates: dict, mode: str = 'default') -> list:
+def select_date(dates: dict, mode: str = 'default', midnight_shift: int = 0) -> list:
     """
     Selects a date from the dictionary of found dates based on the selected mode.
     Returns a list [label, datetime] or None if no valid date was found.
+    Applies a midnight shift if specified, adjusting early morning times to the previous day.
     """
 
-    # Gruppiere nach Herkunft
     exif_dates = {k: v for k, v in dates.items() if 'DateTime' in k}
     sidecar_dates = {k: v for k, v in dates.items() if 'Sidecar' in k}
     metadata_dates = {k: v for k, v in dates.items() if k in ['Created', 'Modified']}
@@ -177,8 +185,10 @@ def select_date(dates: dict, mode: str = 'default') -> list:
             return max(date_dict.items(), key=lambda x: x[1])
         return None
 
+    selected = None
+
     if mode == 'default':
-        return (
+        selected = (
             get_oldest(ffprobe_dates) or
             get_oldest(exif_dates) or
             get_oldest(filename_dates) or
@@ -188,57 +198,67 @@ def select_date(dates: dict, mode: str = 'default') -> list:
         )
 
     elif mode == 'oldest':
-        return get_oldest(dates)
+        selected = get_oldest(dates)
 
     elif mode == 'newest':
-        return get_newest(dates)
+        selected = get_newest(dates)
 
     elif mode == 'exif':
         result = get_oldest(exif_dates)
         if result:
-            return result
-        logging.warning("No EXIF dates found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No EXIF dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     elif mode == 'ffprobe':
         result = get_oldest(ffprobe_dates)
         if result:
-            return result
-        logging.warning("No ffprobe CreationTime found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No ffprobe CreationTime found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     elif mode == 'sidecar':
         result = get_oldest(sidecar_dates)
         if result:
-            return result
-        logging.warning("No sidecar dates found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No sidecar dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     elif mode == 'filename':
         result = get_oldest(filename_dates)
         if result:
-            return result
-        logging.warning("No filename dates found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No filename dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     elif mode == 'folder':
         result = get_oldest(folder_dates)
         if result:
-            return result
-        logging.warning("No folder dates found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No folder dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     elif mode == 'metadata':
         result = get_oldest(metadata_dates)
         if result:
-            return result
-        logging.warning("No metadata dates found, falling back to default.")
-        return select_date(dates, 'default')
+            selected = result
+        else:
+            logging.warning("No metadata dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
 
     else:
         logging.error(f"Unknown mode '{mode}' provided. Falling back to default.")
-        return select_date(dates, 'default')
+        return select_date(dates, 'default', midnight_shift=midnight_shift)
 
+    if selected and midnight_shift and selected[1].hour < midnight_shift:
+        selected = (selected[0], selected[1] - datetime.timedelta(days=1))
+
+    return selected
     
     
     

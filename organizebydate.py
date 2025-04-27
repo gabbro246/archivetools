@@ -37,13 +37,13 @@ def generate_unique_filename(target_path):
     return target_path
 
 
-def organize_files(target_dir, mode, rename_files, get_folder_name_func):
+def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name_func):
     for file_name in os.listdir(target_dir):
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
         if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
             dates = get_dates_from_file(file_path)
-            selected_date_info = select_date(dates, mode=mode)
+            selected_date_info = select_date(dates, mode=mode, midnight_shift=midnight_shift)
             if selected_date_info:
                 date_source, date_used = selected_date_info
             else:
@@ -114,11 +114,13 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='default', choices=[
             'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
         ], help='Date selection strategy to use.')
+    parser.add_argument('--midnight-shift', nargs='?', const=3, type=int, default=0, help="Shift early morning times (e.g., up to 3 AM) to the previous day. Default 3h if no value is given.")
     args = parser.parse_args()
 
     target_dir = args.folder
     rename_files = args.rename
     mode = args.mode
+    midnight_shift = args.midnight_shift
 
     if args.day:
         organize_files_by_day(target_dir, mode, rename_files)
