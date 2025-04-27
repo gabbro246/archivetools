@@ -70,30 +70,30 @@ def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_na
                     logging.error("File could not be moved. File not found.", extra={'target': os.path.basename(file_name)})
 
 
-def organize_files_by_day(target_dir, mode, rename_files):
-    organize_files(target_dir, mode, rename_files, lambda date: date.strftime('%Y%m%d'))
+def organize_files_by_day(target_dir, mode, rename_files, midnight_shift):
+    organize_files(target_dir, mode, rename_files, midnight_shift, lambda date: date.strftime('%Y%m%d'))
 
 
-def organize_files_by_week(target_dir, mode, rename_files):
+def organize_files_by_week(target_dir, mode, rename_files, midnight_shift):
     def get_folder_name(date_used):
         iso_year, iso_week, _ = date_used.isocalendar()
         start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
         end_date = start_date + datetime.timedelta(days=6)
         return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - KW{iso_week:02d}'
-    organize_files(target_dir, mode, rename_files, get_folder_name)
+    organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name)
 
 
-def organize_files_by_month(target_dir, mode, rename_files):
+def organize_files_by_month(target_dir, mode, rename_files, midnight_shift):
     def get_folder_name(date_used):
         start_date = datetime.datetime(date_used.year, date_used.month, 1)
         end_date = datetime.datetime(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
         month_name_german = GERMAN_MONTH_NAMES[date_used.month]
         return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {month_name_german}'
-    organize_files(target_dir, mode, rename_files, get_folder_name)
+    organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name)
 
 
-def organize_files_by_year(target_dir, mode, rename_files):
-    organize_files(target_dir, mode, rename_files, lambda date: date.strftime('%Y'))
+def organize_files_by_year(target_dir, mode, rename_files, midnight_shift):
+    organize_files(target_dir, mode, rename_files, midnight_shift, lambda date: date.strftime('%Y'))
 
 
 import argparse
@@ -123,10 +123,10 @@ if __name__ == "__main__":
     midnight_shift = args.midnight_shift
 
     if args.day:
-        organize_files_by_day(target_dir, mode, rename_files)
+        organize_files_by_day(target_dir, mode, rename_files, midnight_shift)
     elif args.week:
-        organize_files_by_week(target_dir, mode, rename_files)
+        organize_files_by_week(target_dir, mode, rename_files, midnight_shift)
     elif args.month:
-        organize_files_by_month(target_dir, mode, rename_files)
+        organize_files_by_month(target_dir, mode, rename_files, midnight_shift)
     elif args.year:
-        organize_files_by_year(target_dir, mode, rename_files)
+        organize_files_by_year(target_dir, mode, rename_files, midnight_shift)

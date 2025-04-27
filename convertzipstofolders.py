@@ -1,16 +1,19 @@
 import os
 import shutil
 import argparse
-import zipfile
+import pyzipper
 import hashlib
+import getpass
 import logging
 import sys
 from _atcore import __version__, calculate_file_hash
 
-def verify_unzipped_contents(zip_file_path, extracted_folder_path):
+def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None):
     """Verify that all files in zip_file_path match the files in extracted_folder_path."""
     try:
-        with zipfile.ZipFile(zip_file_path, 'r') as zipf:
+        with pyzipper.AESZipFile(zip_file_path, 'r') as zipf:
+            if password:
+                zipf.setpassword(password.encode())
             for zip_info in zipf.infolist():
                 file_path = os.path.join(extracted_folder_path, zip_info.filename)
                 
@@ -35,6 +38,11 @@ def verify_unzipped_contents(zip_file_path, extracted_folder_path):
         return False
 
 def unzip_and_verify(directory):
+    # Handle AES-256 decryption password
+    global_password = None
+    if args.aes256 and args.aes256 is not True:
+        global_password = args.aes256
+
     zip_files = [f for f in os.listdir(directory) if f.endswith(".zip")]
     for zip_file in zip_files:
         zip_file_path = os.path.join(directory, zip_file)
@@ -48,11 +56,28 @@ def unzip_and_verify(directory):
         
         try:
             # Extract the zip file
-            with zipfile.ZipFile(zip_file_path, 'r') as zipf:
-                zipf.extractall(extracted_folder_path)
+            with pyzipper.AESZipFile(zip_file_path, 'r') as zipf:
+                needs_password = any(info.flag_bits & 0x1 for info in zipf.infolist())
+
+                if needs_password:
+                    if not global_password:
+                        global_password = getpass.getpass(f"Enter password for {os.path.basename(zip_file_path)}: ")
+                    zipf.setpassword(global_password.encode())
+
+                try:
+                    zipf.extractall(extracted_folder_path)
+                except RuntimeError as e:
+                    if "Bad password" in str(e):
+                        logging.warning(f"Wrong password. Asking again.", extra={'target': os.path.basename(zip_file_path)})
+                        global_password = getpass.getpass(f"Re-enter password for {os.path.basename(zip_file_path)}: ")
+                        zipf.setpassword(global_password.encode())
+                        zipf.extractall(extracted_folder_path)  # retry once
+                    else:
+                        raise
+
             
             # Verify and delete the zip file if verification is successful
-            if verify_unzipped_contents(zip_file_path, extracted_folder_path):
+            if verify_unzipped_contents(zip_file_path, extracted_folder_path, global_password):
                 logging.info(f"Verification successful. Deleting zip file.", extra={'target': os.path.basename(zip_file)})
                 os.remove(zip_file_path)
             else:
@@ -77,6 +102,7 @@ if __name__ == "__main__":
     )
     parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
     parser.add_argument('-f', '--folder', type=str, help='Path to the folder to process')
+    parser.add_argument('--aes256', nargs='?', const=True, help='Password for AES-256 encrypted ZIPs. If omitted, you will be prompted when needed.')
     args = parser.parse_args()
 
     directory_to_unzip = args.folder

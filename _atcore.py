@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 import os
 import datetime
@@ -8,12 +8,15 @@ from colorama import Fore, Style, init
 import hashlib
 import subprocess
 import re
+import getpass
 
 
 
 
 
+# ========================================
 # logs with color
+# ========================================
 init(autoreset=True)
 class ColoredFormatter(logging.Formatter):
     COLORS = { 'DEBUG': Fore.CYAN, 'INFO': Fore.GREEN, 'WARNING': Fore.YELLOW, 'ERROR': Fore.RED, 'CRITICAL': Fore.MAGENTA}
@@ -31,8 +34,9 @@ logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 
-
+# ========================================
 # definitions
+# ========================================
 SIDECAR_EXTENSIONS = ['.xmp', '.json', '.txt', '.srt', '.xml', '.csv', '.ini', '.yaml', '.yml', '.md', '.log', '.nfo', '.sub', '.idx', '.mta', '.vtt', '.lrc']
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.psd', '.heic', '.nef', '.gif', '.bmp', '.dng', '.raw', '.svg', '.webp', '.cr2', '.arw', '.orf', '.rw2', '.ico', '.eps', '.ai', '.indd']
 VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.webm', '.3gp', '.mpeg', '.mpg', '.m4v', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.rm', '.divx', '.asf', '.f4v', '.m2ts']
@@ -43,7 +47,24 @@ GERMAN_MONTH_NAMES = {1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai
 
 
 
+# ========================================
+# ========================================
+def prompt_password(confirm=True):
+    """Prompt the user for a password (hidden input). Confirm if needed."""
+    password = getpass.getpass("Enter password: ")
+    if confirm:
+        password_confirm = getpass.getpass("Confirm password: ")
+        if password != password_confirm:
+            raise ValueError("Passwords do not match.")
+    return password
+
+
+
+
+
+# ========================================
 # Function to get all available dates from a file and its sidecar
+# ========================================
 def get_dates_from_file(file_path):
     dates = {}
     # Get EXIF dates
@@ -161,6 +182,8 @@ def get_dates_from_file(file_path):
 
     
 
+# ========================================
+# ========================================
 def select_date(dates: dict, mode: str = 'default', midnight_shift: int = 0) -> list:
     """
     Selects a date from the dictionary of found dates based on the selected mode.
@@ -264,6 +287,8 @@ def select_date(dates: dict, mode: str = 'default', midnight_shift: int = 0) -> 
     
     
     
+# ========================================
+# ========================================
 def calculate_file_hash(file_path):
     """Calculate SHA-256 hash of a file."""
     hash_sha256 = hashlib.sha256()
