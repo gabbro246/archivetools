@@ -1,4 +1,4 @@
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 import os
 import datetime
@@ -78,8 +78,7 @@ def get_dates_from_file(file_path):
                     decoded = ExifTags.TAGS.get(tag, tag)
                     if decoded in ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]:
                         dates[decoded] = datetime.datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
-    except Exception as e:
-        #logging.warning(f"could not get EXIF data: {e}", extra={'target': os.path.basename(file_path)})
+    except Exception:
         pass
 
     # Get file creation and modification dates
@@ -89,7 +88,7 @@ def get_dates_from_file(file_path):
         dates['Modified'] = datetime.datetime.fromtimestamp(stat.st_mtime)
     except Exception as e:
         logging.warning(f"could not get file dates: {e}", extra={'target': os.path.basename(file_path)})
-        
+
     # Get creation_time from video metadata via ffprobe
     try:
         if os.path.splitext(file_path)[1].lower() in VIDEO_EXTENSIONS:
@@ -108,7 +107,6 @@ def get_dates_from_file(file_path):
                         parsed_date = datetime.datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
                         dates['CreationTime'] = parsed_date
                     except ValueError:
-                        # handle alternate formats if needed
                         try:
                             parsed_date = datetime.datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%S.%fZ")
                             dates['FFprobe CreationTime'] = parsed_date
@@ -117,32 +115,44 @@ def get_dates_from_file(file_path):
     except Exception as e:
         logging.warning(f"ffprobe failed: {e}", extra={'target': os.path.basename(file_path)})
 
-
     # Get dates from sidecar files
     base_path, file_ext = os.path.splitext(file_path)
     for ext in SIDECAR_EXTENSIONS:
-        # Handle both sidecar naming conventions
         for sidecar_path in [f"{base_path}{ext}", f"{base_path}{file_ext}{ext}"]:
             if os.path.exists(sidecar_path):
                 try:
                     with open(sidecar_path, 'r') as f:
-                        for line in f:
-                            if 'date' in line.lower():
-                                try:
-                                    potential_date = datetime.datetime.fromisoformat(line.strip())
-                                    dates[f"Sidecar ({ext})"] = potential_date
-                                except ValueError:
-                                    pass
+                        if ext == '.json':
+                            try:
+                                import json
+                                sidecar_data = json.load(f)
+                                if 'date' in sidecar_data:
+                                    try:
+                                        date_value = sidecar_data['date']
+                                        parsed_date = datetime.datetime.fromisoformat(date_value)
+                                        dates[f"Sidecar ({ext})"] = parsed_date
+                                    except ValueError:
+                                        pass
+                            except Exception as e:
+                                logging.warning(f"could not parse JSON sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
+                        else:
+                            for line in f:
+                                if 'date' in line.lower():
+                                    try:
+                                        potential_date = datetime.datetime.fromisoformat(line.strip())
+                                        dates[f"Sidecar ({ext})"] = potential_date
+                                    except ValueError:
+                                        pass
                 except Exception as e:
                     logging.warning(f"could not read sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
-                    
+
     # Extract date from filename using common patterns
     filename = os.path.basename(file_path)
     date_patterns = [
-        (r"(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})", "%Y%m%d%H%M%S"),  # e.g. IMG_2023_04_05_14_52_10
-        (r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})", "%Y%m%d%H%M%S"),    # e.g. 20230405-145210 or _145210
-        (r"(\d{4})[._-](\d{2})[._-](\d{2})", "%Y%m%d"),                        # e.g. 2023-04-05
-        (r"(\d{4})(\d{2})(\d{2})", "%Y%m%d"),                                  # e.g. 20230405
+        (r"(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})", "%Y%m%d%H%M%S"),
+        (r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})", "%Y%m%d%H%M%S"),
+        (r"(\d{4})[._-](\d{2})[._-](\d{2})", "%Y%m%d"),
+        (r"(\d{4})(\d{2})(\d{2})", "%Y%m%d"),
     ]
     for pattern, fmt in date_patterns:
         match = re.search(pattern, filename)
@@ -154,21 +164,16 @@ def get_dates_from_file(file_path):
                 break
             except ValueError:
                 continue
-            
+
     # Extract date from parent folder name
     folder_name = os.path.basename(os.path.dirname(file_path))
     try:
-        # Day: YYYYMMDD
         if re.match(r"^\d{8}$", folder_name):
             parsed_date = datetime.datetime.strptime(folder_name, "%Y%m%d")
             dates["FolderDate"] = parsed_date
-
-        # Year: YYYY
         elif re.match(r"^\d{4}$", folder_name):
             parsed_date = datetime.datetime.strptime(folder_name, "%Y")
             dates["FolderDate"] = parsed_date
-
-        # Week/Month: YYYYMMDD-YYYYMMDD - ...
         elif re.match(r"^\d{8}-\d{8}", folder_name):
             start_str, end_str = folder_name.split("-")[0], folder_name.split("-")[1].split(" ")[0]
             start_date = datetime.datetime.strptime(start_str, "%Y%m%d")
