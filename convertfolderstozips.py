@@ -69,13 +69,24 @@ def zip_and_verify(directory):
                     for root, _, files in os.walk(folder_path):
                         for file in files:
                             file_path = os.path.join(root, file)
-                            zipf.write(file_path, os.path.relpath(file_path, folder_path))
+                            arcname = os.path.relpath(file_path, folder_path)
+                            try:
+                                zipf.write(file_path, arcname)
+                            except Exception as e:
+                                logging.error(f"Failed to write file to zip: {e}", extra={'target': file_path})
+                                raise
             else:
                 with pyzipper.AESZipFile(zip_file_path, 'w', compression=pyzipper.ZIP_DEFLATED) as zipf:
                     for root, _, files in os.walk(folder_path):
                         for file in files:
                             file_path = os.path.join(root, file)
-                            zipf.write(file_path, os.path.relpath(file_path, folder_path))
+                            arcname = os.path.relpath(file_path, folder_path)
+                            try:
+                                zipf.write(file_path, arcname)
+                            except Exception as e:
+                                logging.error(f"Failed to write file to zip: {e}", extra={'target': file_path})
+                                raise
+
 
 
             # Verify and delete the original folder if verification is successful

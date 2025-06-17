@@ -1,4 +1,4 @@
-__version__ = "0.3.5"
+__version__ = "0.4.0"
 
 import os
 import datetime
@@ -19,12 +19,22 @@ import getpass
 # ========================================
 init(autoreset=True)
 class ColoredFormatter(logging.Formatter):
-    COLORS = { 'DEBUG': Fore.CYAN, 'INFO': Fore.GREEN, 'WARNING': Fore.YELLOW, 'ERROR': Fore.RED, 'CRITICAL': Fore.MAGENTA}
+    COLORS = {
+        'DEBUG': Fore.CYAN,
+        'INFO': Fore.GREEN,
+        'WARNING': Fore.YELLOW,
+        'ERROR': Fore.RED,
+        'CRITICAL': Fore.MAGENTA
+    }
+
     def format(self, record):
         if not hasattr(record, 'target'):
             record.target = '-'  # Default value if 'target' is not provided
         log_color = self.COLORS.get(record.levelname, '')
-        log_format = f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s{Style.RESET_ALL}"
+        log_format = (
+            f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s\t"
+            f"(%(filename)s:%(lineno)d){Style.RESET_ALL}"
+        )
         formatter = logging.Formatter(log_format)
         return formatter.format(record)
 handler = logging.StreamHandler()
