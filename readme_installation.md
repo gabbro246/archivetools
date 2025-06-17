@@ -6,7 +6,7 @@
 - Installing Required Python packages:
 
 ```bash
-pip install pillow colorama pyzipper piexif
+pip install -r requirements.txt
 ```
 
 ## Clone Repository
