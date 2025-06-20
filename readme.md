@@ -4,8 +4,8 @@ ArchiveTools is a suite of Python-based tools for streamlining file management t
 
 ## Usage
 
-* For installation see: [Installation](readme_installation.md)
-* For more details about flags see: [Flags](readme_flags.md)
+* For installation see: [Installation](docs/installation.md)
+* For more details about flags see: [Flags](docs/flags.md)
 
 ### Organize all Media by Date
 
