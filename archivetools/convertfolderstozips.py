@@ -5,7 +5,7 @@ import pyzipper
 import hashlib
 import logging
 import sys
-from archivetoolscore import __version__, calculate_file_hash, prompt_password
+from archivetools import __version__, calculate_file_hash, prompt_password
 
 def verify_zipped_contents(folder_path, zip_file_path, password=None, verbose=False):
     if verbose:
@@ -117,7 +117,7 @@ def zip_and_verify(directory, verbose=False):
                     logging.debug(f"Removing incomplete zip: {zip_file_path}", extra={'target': os.path.basename(zip_file_path)})
                 os.remove(zip_file_path)
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Compresses each folder in the target directory into a separate ZIP archive. Verifies the integrity of each archive before deleting the original folder.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -133,5 +133,7 @@ if __name__ == "__main__":
     else:
         logging.getLogger().setLevel(logging.INFO)
 
-    directory_to_zip = args.folder
-    zip_and_verify(directory_to_zip, verbose=args.verbose)
+    zip_and_verify(args)
+
+if __name__ == "__main__":
+    main()

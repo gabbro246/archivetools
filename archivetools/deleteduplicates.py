@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 import mimetypes
 import argparse
-from archivetoolscore import __version__, get_dates_from_file, select_date, calculate_file_hash, MEDIA_EXTENSIONS
+from archivetools import __version__, get_dates_from_file, select_date, calculate_file_hash, MEDIA_EXTENSIONS
 
 def prioritize_file(files, mode='default', verbose=False):
     if verbose:
@@ -68,7 +68,7 @@ def process_folder(folder_path, mode='default', verbose=False):
                         logging.error(f"Error deleting file: {e}", extra={'target': os.path.basename(file)})
             logging.info(f"Kept: {os.path.basename(file_to_keep)}    |    Deleted: {', '.join(deleted_files)}", extra={'target': os.path.basename(folder_path)})
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Scans a folder for duplicate image or video files based on file hash. Keeps the most relevant version based on metadata or timestamp and deletes the rest.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -93,3 +93,6 @@ if __name__ == "__main__":
     logging.info(f"Processing folder", extra={'target': os.path.basename(folder_path)})
     process_folder(folder_path, mode, verbose=args.verbose)
     logging.info("Processing complete.", extra={'target': os.path.basename(folder_path)})
+
+if __name__ == "__main__":
+    main()

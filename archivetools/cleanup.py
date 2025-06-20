@@ -2,7 +2,7 @@ import os
 import argparse
 import logging
 import shutil
-from archivetoolscore import __version__, SIDECAR_EXTENSIONS, JUNK_FILENAMES, JUNK_PREFIXES
+from archivetools import __version__, SIDECAR_EXTENSIONS, JUNK_FILENAMES, JUNK_PREFIXES
 
 def is_empty_file(path):
     return os.path.getsize(path) == 0
@@ -74,7 +74,7 @@ def cleanup_files(folder, verbose=False):
             extra={'target': os.path.basename(folder)}
         )
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Deletes all empty sidecar files, unnecessary junk files/folders (like .DS_Store, desktop.ini, NCFLsDat, AppleDouble, __MACOSX, etc.), and all empty folders in the target folder and its subfolders. Extensions and names are defined in _atcore.py.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -90,3 +90,7 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     cleanup_files(args.folder, verbose=args.verbose)
+
+if __name__ == "__main__":
+    main()
+

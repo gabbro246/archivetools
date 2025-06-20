@@ -6,7 +6,7 @@ import hashlib
 import getpass
 import logging
 import sys
-from archivetoolscore import __version__, calculate_file_hash
+from archivetools import __version__, calculate_file_hash
 
 def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None, verbose=False):
     if verbose:
@@ -99,7 +99,7 @@ def unzip_and_verify(directory, verbose=False):
             if os.path.exists(extracted_folder_path):
                 shutil.rmtree(extracted_folder_path)
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Extracts all ZIP archives in the target folder into folders with matching names. Verifies that all extracted files match the original content before deleting the ZIP file.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -115,5 +115,7 @@ if __name__ == "__main__":
     else:
         logging.getLogger().setLevel(logging.INFO)
 
-    directory_to_unzip = args.folder
-    unzip_and_verify(directory_to_unzip, verbose=args.verbose)
+    unzip_and_verify(args)
+
+if __name__ == "__main__":
+    main()

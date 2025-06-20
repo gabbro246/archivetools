@@ -1,7 +1,7 @@
 import os
 import argparse
 import logging
-from archivetoolscore import __version__, MEDIA_EXTENSIONS
+from archivetools import __version__, MEDIA_EXTENSIONS
 from PIL import Image
 import subprocess
 
@@ -61,7 +61,7 @@ def check_media_files(folder, verbose=False):
         if all_ok and not verbose:
             logging.info("All media files OK.", extra={'target': os.path.relpath(root, folder)})
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Checks all media files in a folder and its subfolders for corruption. Logs all errors. Only logs OK for whole subfolders unless --verbose is set.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -77,3 +77,7 @@ if __name__ == "__main__":
         logging.getLogger().setLevel(logging.INFO)
 
     check_media_files(args.folder, verbose=args.verbose)
+
+if __name__ == "__main__":
+    main()
+

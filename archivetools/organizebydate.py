@@ -3,7 +3,7 @@ import shutil
 import argparse
 import datetime
 import calendar
-from archivetoolscore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, MONTH_NAMES, WEEK_PREFIX
+from archivetools import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, MONTH_NAMES, WEEK_PREFIX
 import logging
 from PIL import Image
 
@@ -109,7 +109,7 @@ def organize_files_by_month(target_dir, mode, rename_files, midnight_shift, verb
 def organize_files_by_year(target_dir, mode, rename_files, midnight_shift, verbose=False):
     organize_files(target_dir, mode, rename_files, midnight_shift, lambda date: date.strftime('%Y'), verbose=verbose)
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Organizes media files into subfolders by day, week, month, or year based on metadata, EXIF data, filenames, or sidecar information. Automatically moves matching sidecar files.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('--mode', type=str, default='default', choices=[
             'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
         ], help='Date selection strategy to use.')
-    parser.add_argument('--midnight-shift', nargs='?', const=3, type=int, default=0, help="Shift early morning times (e.g., up to 3 AM) to the previous day. Default 3h if no value is given.")
+    parser.add_argument('--midnight-shift', nargs='?', const=3, type=int, default=0, help=\"Shift early morning times (e.g., up to 3 AM) to the previous day. Default 3h if no value is given.\")
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = parser.parse_args()
 
@@ -147,3 +147,6 @@ if __name__ == "__main__":
         organize_files_by_month(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose)
     elif args.year:
         organize_files_by_year(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose)
+
+if __name__ == "__main__":
+    main()

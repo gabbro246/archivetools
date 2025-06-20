@@ -6,7 +6,7 @@ import logging
 import subprocess
 from PIL import Image, ExifTags
 import piexif
-from archivetoolscore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
+from archivetools import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
 
@@ -106,7 +106,7 @@ def set_selected_date(file_path, selected_date_info, current_dates, force=False,
                  selected_date.strftime('%Y-%m-%d %H:%M:%S'),
                  extra={'target': os.path.basename(file_path)})
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Sets the creation and modification timestamps of media files and sidecar files to a selected date. Date source can be EXIF, metadata, sidecar, or filename. Supports dry run and force mode.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -149,3 +149,6 @@ if __name__ == "__main__":
 
     if args.verbose:
         logging.debug(f"Finished processing folder {folder_path}", extra={'target': os.path.basename(folder_path)})
+
+if __name__ == "__main__":
+    main()
