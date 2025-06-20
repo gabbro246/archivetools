@@ -1,4 +1,4 @@
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 import os
 import datetime
@@ -32,8 +32,7 @@ class ColoredFormatter(logging.Formatter):
             record.target = '-'  # Default value if 'target' is not provided
         log_color = self.COLORS.get(record.levelname, '')
         log_format = (
-            f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s\t"
-            f"(%(filename)s:%(lineno)d){Style.RESET_ALL}"
+            f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s{Style.RESET_ALL}"
         )
         formatter = logging.Formatter(log_format)
         return formatter.format(record)
@@ -51,6 +50,8 @@ SIDECAR_EXTENSIONS = ['.aae', '.xmp', '.json', '.txt', '.srt', '.xml', '.csv', '
 IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.psd', '.heic', '.nef', '.gif', '.bmp', '.dng', '.raw', '.svg', '.webp', '.cr2', '.arw', '.orf', '.rw2', '.ico', '.eps', '.ai', '.indd']
 VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.webm', '.3gp', '.mpeg', '.mpg', '.m4v', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.rm', '.divx', '.asf', '.f4v', '.m2ts', '.nev']
 OTHER_EXTENSIONS = ['.gpx', '.kmz', '.kml']
+JUNK_FILENAMES = ["desktop.ini", ".DS_Store", "Thumbs.db", ".Spotlight-V100", ".Trashes", "__MACOSX"]
+JUNK_PREFIXES = ["._"]
 MEDIA_EXTENSIONS = list(set(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS + OTHER_EXTENSIONS))
 MONTH_NAMES = {1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai', 6: 'Juni', 7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Dezember'}
 WEEK_PREFIX = "KW"
