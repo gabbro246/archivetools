@@ -2,7 +2,7 @@ import os
 import argparse
 import logging
 import shutil
-from _atcore import __version__, SIDECAR_EXTENSIONS, JUNK_FILENAMES, JUNK_PREFIXES
+from archivetoolscore import __version__, SIDECAR_EXTENSIONS, JUNK_FILENAMES, JUNK_PREFIXES
 
 def is_empty_file(path):
     return os.path.getsize(path) == 0

@@ -6,7 +6,7 @@ import hashlib
 import getpass
 import logging
 import sys
-from _atcore import __version__, calculate_file_hash
+from archivetoolscore import __version__, calculate_file_hash
 
 def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None, verbose=False):
     if verbose:

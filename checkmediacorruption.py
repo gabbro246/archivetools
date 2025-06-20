@@ -1,7 +1,7 @@
 import os
 import argparse
 import logging
-from _atcore import __version__, MEDIA_EXTENSIONS
+from archivetoolscore import __version__, MEDIA_EXTENSIONS
 from PIL import Image
 import subprocess
 

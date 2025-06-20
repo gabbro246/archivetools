@@ -1,7 +1,7 @@
 import os
 import shutil
 import argparse
-from _atcore import __version__, logging
+from archivetoolscore import __version__, logging
 
 def get_new_name(base, extension, target_folder, verbose=False):
     counter = 1

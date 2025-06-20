@@ -3,7 +3,7 @@ import shutil
 import argparse
 import datetime
 import calendar
-from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, MONTH_NAMES, WEEK_PREFIX
+from archivetoolscore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS, MONTH_NAMES, WEEK_PREFIX
 import logging
 from PIL import Image
 

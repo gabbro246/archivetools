@@ -6,7 +6,7 @@ import logging
 import subprocess
 from PIL import Image, ExifTags
 import piexif
-from _atcore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
+from archivetoolscore import __version__, get_dates_from_file, select_date, SIDECAR_EXTENSIONS, MEDIA_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s]\t%(target)s:\t%(message)s")
 

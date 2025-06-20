@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 import mimetypes
 import argparse
-from _atcore import __version__, get_dates_from_file, select_date, calculate_file_hash, MEDIA_EXTENSIONS
+from archivetoolscore import __version__, get_dates_from_file, select_date, calculate_file_hash, MEDIA_EXTENSIONS
 
 def prioritize_file(files, mode='default', verbose=False):
     if verbose:

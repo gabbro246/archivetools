@@ -5,7 +5,7 @@ import pyzipper
 import hashlib
 import logging
 import sys
-from _atcore import __version__, calculate_file_hash, prompt_password
+from archivetoolscore import __version__, calculate_file_hash, prompt_password
 
 def verify_zipped_contents(folder_path, zip_file_path, password=None, verbose=False):
     if verbose:
