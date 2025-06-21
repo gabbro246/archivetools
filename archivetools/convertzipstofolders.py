@@ -35,7 +35,9 @@ def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None
         logging.error(f"Error during verification: {e}")
         return False
 
-def unzip_and_verify(directory, verbose=False):
+def unzip_and_verify(args):
+    directory = args.folder
+    verbose = args.verbose
     global_password = None
     if args.aes256 and args.aes256 is not True:
         global_password = args.aes256

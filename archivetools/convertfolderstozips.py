@@ -38,7 +38,9 @@ def verify_zipped_contents(folder_path, zip_file_path, password=None, verbose=Fa
         logging.error(f"Error during verification: {e}")
         return False
 
-def zip_and_verify(directory, verbose=False):
+def zip_and_verify(args):
+    directory = args.folder
+    verbose = args.verbose
     if args.aes256:
         if args.aes256 is True:
             try:
