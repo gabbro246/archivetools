@@ -14,6 +14,8 @@ pip install -r requirements.txt
 ```bash
 git clone https://github.com/gabbro246/ArchiveTools.git
 cd ArchiveTools
+pip install -r requirements.txt
+pip install .
 ```
 
 ## Add to Path - Windows (optional)
