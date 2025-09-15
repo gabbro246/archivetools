@@ -125,7 +125,7 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
-    parser.add_argument('-f', '--folder', type=str, help='Path to the folder to process')
+    parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
     parser.add_argument('--aes256', nargs='?', const=True, help='Enable AES-256 encryption. If no password is given, you will be prompted securely.')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = parser.parse_args()
