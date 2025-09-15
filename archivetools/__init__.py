@@ -198,7 +198,7 @@ def get_dates_from_file(file_path):
 
 
 
-    
+
 
 # ========================================
 # ========================================
@@ -300,11 +300,11 @@ def select_date(dates: dict, mode: str = 'default', midnight_shift: int = 0) -> 
         selected = (selected[0], selected[1] - datetime.timedelta(days=1))
 
     return selected
-    
-    
-    
-    
-    
+
+
+
+
+
 # ========================================
 # ========================================
 def calculate_file_hash(file_path):
@@ -428,3 +428,77 @@ class RunSummary:
         except Exception:
             # Never let summary logging crash the script
             pass
+
+# ===============================
+# Target selection helpers (-f/-s)
+# ===============================
+def add_target_args(parser, *,
+                    folder_help="Batch mode: operate on the contents of this folder",
+                    single_help="Single mode: operate on this exact path (file or folder)",
+                    required=True):
+    """
+    Add a mutually-exclusive -f/--folder vs -s/--single group to an argparse parser.
+    One of them will be required by default.
+    """
+    grp = parser.add_mutually_exclusive_group(required=required)
+    grp.add_argument("-f", "--folder", type=str, help=folder_help)
+    grp.add_argument("-s", "--single", type=str, help=single_help)
+    return grp
+
+
+def validate_path(path: str, expect: str, *, must_exist: bool = True) -> str:
+    """
+    Normalize and validate a target path.
+
+    expect: 'file' | 'folder' | 'zip' | 'any'
+      - 'file'  -> must be an existing regular file
+      - 'folder'-> must be an existing directory
+      - 'zip'   -> must be an existing .zip file
+      - 'any'   -> only existence is checked (if must_exist=True)
+
+    Returns the absolute path on success.
+    On failure, logs a clear error and exits the process (SystemExit).
+    """
+    if not path:
+        logging.error("No path provided.", extra={'target': 'TARGET'})
+        raise SystemExit(2)
+
+    p = os.path.abspath(os.path.expanduser(path))
+
+    if must_exist and not os.path.exists(p):
+        logging.error("Path does not exist: %s", p, extra={'target': os.path.basename(p) or 'TARGET'})
+        raise SystemExit(2)
+
+    if expect == 'folder':
+        if not os.path.isdir(p):
+            logging.error("--single expects a folder path, but got a file: %s", p, extra={'target': os.path.basename(p) or 'TARGET'})
+            raise SystemExit(2)
+    elif expect == 'file':
+        if not os.path.isfile(p):
+            logging.error("--single expects a file path, but got a folder: %s", p, extra={'target': os.path.basename(p) or 'TARGET'})
+            raise SystemExit(2)
+    elif expect == 'zip':
+        if not (os.path.isfile(p) and p.lower().endswith(".zip")):
+            logging.error("--single expects a .zip file, got: %s", p, extra={'target': os.path.basename(p) or 'TARGET'})
+            raise SystemExit(2)
+    elif expect == 'any':
+        pass
+    else:
+        logging.error("Internal error: unknown expectation '%s'", expect, extra={'target': 'TARGET'})
+        raise SystemExit(2)
+
+    return p
+
+
+def resolve_target(args, *, single_expect: str, folder_expect: str = 'folder'):
+    """
+    Convenience to resolve the chosen target and mode from argparse results.
+
+    Returns: (mode, path)
+      mode = 'single' if args.single was provided, else 'folder'
+      path = normalized absolute path (validated per expectation)
+    """
+    if getattr(args, "single", None):
+        return 'single', validate_path(args.single, single_expect)
+    # else: batch/folder mode
+    return 'folder', validate_path(args.folder, folder_expect)

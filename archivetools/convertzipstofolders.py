@@ -3,8 +3,14 @@ import shutil
 import argparse
 import pyzipper
 import logging
-from archivetools import __version__, calculate_file_hash, RunSummary, prompt_password
-
+from archivetools import (
+    __version__,
+    calculate_file_hash,
+    RunSummary,
+    add_target_args,
+    resolve_target,
+    prompt_password,
+)
 
 def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None, verbose=False):
     """
@@ -22,7 +28,6 @@ def verify_unzipped_contents(zip_file_path, extracted_folder_path, password=None
             if password:
                 zipf.setpassword(str(password).encode())
             members = [m for m in zipf.namelist() if not m.endswith('/')]
-            # ensure each zip member exists and matches the extracted counterpart
             for rel in members:
                 extracted_path = os.path.join(extracted_folder_path, rel)
                 if not os.path.exists(extracted_path):
@@ -94,19 +99,12 @@ def extract_zip(zip_file_path, target_folder, password=None, verbose=False, summ
         return False
 
 
-def unzip_and_verify(args):
-    directory = args.folder
-    verbose = args.verbose
-
-    # Summary tracker
-    s = RunSummary()
-    # AES-256 flag might be provided with or without a password string
-    provided_password = None
-    if args.aes256 and args.aes256 is not True:
-        provided_password = str(args.aes256)
-    s.set('aes256', bool(args.aes256))
-
-    # process .zip files in the given directory (non-recursive)
+def process_batch(directory, allow_prompt=False, provided_password=None, verbose=False, summary=None):
+    """
+    Batch mode (-f): extract all .zip files in the directory (non-recursive).
+    If allow_prompt is True and provided_password is None, prompt once per failing archive.
+    """
+    s = summary
     zip_files = [f for f in os.listdir(directory) if f.lower().endswith(".zip")]
     total = len(zip_files)
 
@@ -115,36 +113,33 @@ def unzip_and_verify(args):
         folder_name = os.path.splitext(zip_file)[0]
         target_folder = os.path.join(directory, folder_name)
 
-        s.inc('zips_scanned')
+        if s: s.inc('zips_scanned')
         if verbose:
             logging.debug("Processing archive", extra={'target': zip_file})
 
         if os.path.exists(target_folder):
             logging.info("Folder already exists. Skipping.", extra={'target': folder_name})
-            s.inc('skipped_exists')
+            if s: s.inc('skipped_exists')
             continue
 
-        # choose password strategy
         password = provided_password
 
-        # 1) extract
+        # 1) extract (possibly prompt if allowed)
         ok = extract_zip(zip_path, target_folder, password=password, verbose=verbose, summary=s)
-        if not ok and (args.aes256 is True or password is None):
-            # If user passed --aes256 (no value) or no password was provided, prompt once and retry
+        if not ok and allow_prompt and password is None:
             try:
                 pw = prompt_password(confirm=False)
             except Exception as e:
                 logging.error("Password input error: %s", e, extra={'target': zip_file})
-                s.inc('password_failures')
+                if s: s.inc('password_failures')
                 continue
             if pw:
-                s.inc('password_prompts')
+                if s: s.inc('password_prompts')
                 ok = extract_zip(zip_path, target_folder, password=pw, verbose=verbose, summary=s)
-                if not ok:
-                    s.inc('password_failures')
+                if not ok and s: s.inc('password_failures')
 
         if not ok:
-            s.inc('extract_failures')
+            if s: s.inc('extract_failures')
             # tidy up empty partial folder
             try:
                 if os.path.isdir(target_folder) and not os.listdir(target_folder):
@@ -153,25 +148,133 @@ def unzip_and_verify(args):
                 pass
             continue
 
-        s.inc('extracted')
+        if s: s.inc('extracted')
 
         # 2) verify
         verified = verify_unzipped_contents(zip_path, target_folder, password=password, verbose=verbose)
         if not verified:
-            s.inc('verify_failures')
+            if s: s.inc('verify_failures')
             logging.warning("Verification failed — keeping zip and extracted folder.", extra={'target': zip_file})
             continue
 
-        s.inc('verified_ok')
+        if s: s.inc('verified_ok')
 
         # 3) delete zip on success
         try:
             os.remove(zip_path)
-            s.inc('zips_deleted')
+            if s: s.inc('zips_deleted')
             logging.info("Verification OK — deleted original zip.", extra={'target': zip_file})
         except Exception as e:
             logging.error("Failed to delete zip after verification: %s", e, extra={'target': zip_file})
-            s.inc('errors')
+            if s: s.inc('errors')
+
+    return total
+
+
+def process_single(zip_path, allow_prompt=False, provided_password=None, verbose=False, summary=None):
+    """
+    Single mode (-s): extract this one .zip file.
+    """
+    s = summary
+    zip_file = os.path.basename(zip_path)
+    folder_name = os.path.splitext(zip_file)[0]
+    directory = os.path.dirname(os.path.abspath(zip_path))
+    target_folder = os.path.join(directory, folder_name)
+
+    if s: s.inc('zips_scanned')
+    if verbose:
+        logging.debug("Processing archive", extra={'target': zip_file})
+
+    if os.path.exists(target_folder):
+        logging.info("Folder already exists. Skipping.", extra={'target': folder_name})
+        if s: s.inc('skipped_exists')
+        return 1
+
+    password = provided_password
+
+    ok = extract_zip(zip_path, target_folder, password=password, verbose=verbose, summary=s)
+    if not ok and allow_prompt and password is None:
+        try:
+            pw = prompt_password(confirm=False)
+        except Exception as e:
+            logging.error("Password input error: %s", e, extra={'target': zip_file})
+            if s: s.inc('password_failures')
+            return 1
+        if pw:
+            if s: s.inc('password_prompts')
+            ok = extract_zip(zip_path, target_folder, password=pw, verbose=verbose, summary=s)
+            if not ok and s: s.inc('password_failures')
+
+    if not ok:
+        if s: s.inc('extract_failures')
+        try:
+            if os.path.isdir(target_folder) and not os.listdir(target_folder):
+                os.rmdir(target_folder)
+        except Exception:
+            pass
+        return 1
+
+    if s: s.inc('extracted')
+
+    verified = verify_unzipped_contents(zip_path, target_folder, password=password, verbose=verbose)
+    if not verified:
+        if s: s.inc('verify_failures')
+        logging.warning("Verification failed — keeping zip and extracted folder.", extra={'target': zip_file})
+        return 1
+
+    if s: s.inc('verified_ok')
+
+    try:
+        os.remove(zip_path)
+        if s: s.inc('zips_deleted')
+        logging.info("Verification OK — deleted original zip.", extra={'target': zip_file})
+    except Exception as e:
+        logging.error("Failed to delete zip after verification: %s", e, extra={'target': zip_file})
+        if s: s.inc('errors')
+
+    return 1
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Converts ZIP archives into folders. In -f mode, extracts all zips in the folder; in -s mode, extracts a single .zip file.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    add_target_args(
+        parser,
+        folder_help="Batch mode: extract all .zip files in this folder (non-recursive)",
+        single_help="Single mode: extract this .zip file",
+        required=True,
+    )
+    parser.add_argument(
+        '--aes256',
+        nargs='?',
+        const=True,
+        help='If set, treat archives as AES-256 encrypted. Provide a password directly, or pass the flag alone to be prompted as needed.',
+    )
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    args = parser.parse_args()
+
+    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
+
+    # -s expects a .zip file; -f expects a folder
+    mode_sel, target = resolve_target(args, single_expect='zip', folder_expect='folder')
+
+    # AES-256 handling:
+    # - if args.aes256 is a string => fixed password for all zips
+    # - if args.aes256 is True => prompt per-zip on demand (allow_prompt=True)
+    # - else => no password attempts
+    allow_prompt = bool(args.aes256 is True)
+    provided_password = None if allow_prompt else (str(args.aes256) if args.aes256 else None)
+
+    s = RunSummary()
+    s.set('aes256', bool(args.aes256))
+
+    if mode_sel == 'single':
+        total = process_single(target, allow_prompt=allow_prompt, provided_password=provided_password, verbose=args.verbose, summary=s)
+    else:
+        total = process_batch(target, allow_prompt=allow_prompt, provided_password=provided_password, verbose=args.verbose, summary=s)
 
     # Emit end-of-run summary
     zips_scanned = s['zips_scanned'] or 0
@@ -186,11 +289,17 @@ def unzip_and_verify(args):
     prompts = s['password_prompts'] or 0
     pfails = s['password_failures'] or 0
 
-    line1 = f"Extracted {extracted}/{total} zips ({skipped} skipped: folder existed). {files_extracted} files unpacked in {s.duration_hms}."
+    if mode_sel == 'single':
+        head = f"Extracted {extracted}/{total} zip"
+    else:
+        head = f"Extracted {extracted}/{total} zips ({skipped} skipped: folder existed)"
+
+    line1 = f"{head}. {files_extracted} files unpacked in {s.duration_hms}."
     line2 = f"Verification OK for {verified_ok} archives — deleted {zips_deleted} zip files. AES-256: {'yes' if s['aes256'] else 'no'}."
     line3 = f"Failures — extract: {extract_failures}, verify: {verify_failures}, other errors: {errors}. Password prompts: {prompts}, failures: {pfails}."
 
     s.emit_lines([line1, line2, line3], json_extra={
+        'target_mode': mode_sel,
         'zips_total': total,
         'zips_scanned': zips_scanned,
         'extracted': extracted,
@@ -206,26 +315,6 @@ def unzip_and_verify(args):
         'password_failures': pfails,
         'errors': errors,
     })
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Converts ZIP archives in a folder into extracted folders. Verifies integrity and deletes ZIP on success.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
-    parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
-    parser.add_argument(
-        '--aes256',
-        nargs='?',
-        const=True,
-        help='If set, treat archives as AES-256 encrypted. Provide a password directly, or pass the flag alone to be prompted as needed.',
-    )
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
-    args = parser.parse_args()
-
-    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
-    unzip_and_verify(args)
 
 
 if __name__ == "__main__":

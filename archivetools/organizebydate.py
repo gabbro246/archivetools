@@ -14,8 +14,14 @@ from archivetools import (
     MEDIA_EXTENSIONS,
     MONTH_NAMES,
     WEEK_PREFIX,
-    RunSummary,  # <— added
+    RunSummary,
+    add_target_args,
+    resolve_target,
 )
+
+# ------------------------------------------------------------
+# helpers
+# ------------------------------------------------------------
 
 def move_sidecar_files(file_path, target_folder, verbose=False):
     base_name, file_extension = os.path.splitext(os.path.basename(file_path))
@@ -46,7 +52,11 @@ def generate_unique_filename(target_path):
         counter += 1
     return candidate
 
-def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name_func, verbose=False, summary=None):  # <— summary
+# ------------------------------------------------------------
+# core logic (folder mode)
+# ------------------------------------------------------------
+
+def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name_func, verbose=False, summary=None):
     if verbose:
         logging.debug(f"Organizing files in {target_dir} with mode={mode}", extra={'target': os.path.basename(target_dir)})
 
@@ -54,7 +64,7 @@ def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_na
         file_path = os.path.join(target_dir, file_name)
         file_extension = os.path.splitext(file_name)[1].lower()
         if os.path.isfile(file_path) and file_extension in MEDIA_EXTENSIONS:
-            if summary: summary.inc('found')  # <— added
+            if summary: summary.inc('found')
             if verbose:
                 logging.debug(f"Processing file: {file_path}", extra={'target': file_name})
 
@@ -62,14 +72,14 @@ def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_na
             selected_date_info = select_date(dates, mode=mode, midnight_shift=midnight_shift)
             if selected_date_info:
                 date_source, date_used = selected_date_info
-                if summary: summary.inc(f"source_{str(date_source).lower()}")  # <— added
+                if summary: summary.inc(f"source_{str(date_source).lower()}")
                 if verbose:
                     logging.debug(f"Date selected for {file_name}: {date_used} (source: {date_source})", extra={'target': file_name})
             else:
                 if verbose:
                     logging.debug(f"No valid date found for {file_name}, skipping.", extra={'target': file_name})
                 logging.info("No valid date found. Skipping.", extra={'target': os.path.basename(file_name)})
-                if summary: summary.inc('skipped_no_date')  # <— added
+                if summary: summary.inc('skipped_no_date')
                 continue
 
             folder_name = get_folder_name_func(date_used)
@@ -79,7 +89,7 @@ def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_na
                 if verbose:
                     logging.debug(f"Creating folder: {target_folder}", extra={'target': folder_name})
                 os.makedirs(target_folder, exist_ok=True)
-                if summary: summary.inc('folders_created')  # <— added
+                if summary: summary.inc('folders_created')
 
             target_path = os.path.join(target_folder, file_name)
             if os.path.exists(file_path):
@@ -89,32 +99,113 @@ def organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_na
                         if verbose:
                             logging.debug(f"Renaming {file_name} -> {os.path.basename(new_target_path)}", extra={'target': file_name})
                         target_path = new_target_path
-                        if summary: summary.inc('renamed')  # <— added
+                        if summary: summary.inc('renamed')
                     else:
                         if verbose:
                             logging.debug(f"File with same name exists in {target_folder}, skipping {file_name}.", extra={'target': file_name})
                         logging.warning("Skipping - File with same name exists.", extra={'target': os.path.basename(file_name)})
-                        if summary: summary.inc('skipped_conflict')  # <— added
+                        if summary: summary.inc('skipped_conflict')
                         continue
                 try:
                     if verbose:
                         logging.debug(f"Moving {file_name} to {target_folder}", extra={'target': file_name})
                     shutil.move(file_path, target_path)
-                    if summary: summary.inc('moved')  # <— added
+                    if summary: summary.inc('moved')
                     logging.info("Moved file to %s (%s: %s)", target_folder, date_source, date_used.strftime('%Y-%m-%d'), extra={'target': os.path.basename(file_name)})
 
                     move_sidecar_files(file_path, target_folder, verbose=verbose)
                 except FileNotFoundError:
                     logging.error("File could not be moved. File not found.", extra={'target': os.path.basename(file_name)})
-                    if summary: summary.inc('errors')  # <— added
+                    if summary: summary.inc('errors')
 
     if verbose:
         logging.debug(f"Finished organizing files in {target_dir}", extra={'target': os.path.basename(target_dir)})
 
-def organize_files_by_day(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):  # <— summary
+# ------------------------------------------------------------
+# single-file logic
+# ------------------------------------------------------------
+
+def _get_folder_name_for_args(date_used, args):
+    if args.day:
+        return date_used.strftime('%Y%m%d')
+    if args.week:
+        iso_year, iso_week, _ = date_used.isocalendar()
+        start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
+        end_date = start_date + datetime.timedelta(days=6)
+        return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {WEEK_PREFIX}{iso_week:02d}'
+    if args.month:
+        start_date = datetime.datetime(date_used.year, date_used.month, 1)
+        return f'{start_date.strftime("%Y%m")} - {MONTH_NAMES[date_used.month]} {date_used.year}'
+    if args.year:
+        return date_used.strftime('%Y')
+    # default fallback (shouldn’t happen because one granularity is required)
+    return date_used.strftime('%Y%m%d')
+
+def organize_single_file(file_path, mode, rename_files, midnight_shift, args, verbose=False, summary=None):
+    """Move exactly one file into the correct dated subfolder under its current directory."""
+    file_name = os.path.basename(file_path)
+    parent_dir = os.path.dirname(file_path)
+    ext = os.path.splitext(file_name)[1].lower()
+
+    if not (os.path.isfile(file_path) and ext in MEDIA_EXTENSIONS):
+        logging.info("Not a supported media file. Skipping.", extra={'target': file_name})
+        if summary: summary.inc('skipped_no_date')  # keep counters simple; treat as non-action
+        return
+
+    if summary: summary.inc('found')
+    if verbose:
+        logging.debug(f"Processing single file: {file_path}", extra={'target': file_name})
+
+    dates = get_dates_from_file(file_path)
+    selected_date_info = select_date(dates, mode=mode, midnight_shift=midnight_shift)
+    if not selected_date_info:
+        logging.info("No valid date found. Skipping.", extra={'target': file_name})
+        if summary: summary.inc('skipped_no_date')
+        return
+
+    date_source, date_used = selected_date_info
+    if summary: summary.inc(f"source_{str(date_source).lower()}")
+
+    folder_name = _get_folder_name_for_args(date_used, args)
+    target_folder = os.path.join(parent_dir, folder_name)
+    if not os.path.exists(target_folder):
+        if verbose:
+            logging.debug(f"Creating folder: {target_folder}", extra={'target': folder_name})
+        os.makedirs(target_folder, exist_ok=True)
+        if summary: summary.inc('folders_created')
+
+    target_path = os.path.join(target_folder, file_name)
+    if os.path.exists(target_path):
+        if rename_files:
+            new_target_path = generate_unique_filename(target_path)
+            if verbose:
+                logging.debug(f"Renaming {file_name} -> {os.path.basename(new_target_path)}", extra={'target': file_name})
+            target_path = new_target_path
+            if summary: summary.inc('renamed')
+        else:
+            logging.warning("Skipping - File with same name exists.", extra={'target': file_name})
+            if summary: summary.inc('skipped_conflict')
+            return
+
+    try:
+        if verbose:
+            logging.debug(f"Moving {file_name} to {target_folder}", extra={'target': file_name})
+        shutil.move(file_path, target_path)
+        if summary: summary.inc('moved')
+        logging.info("Moved file to %s (%s: %s)", target_folder, date_source, date_used.strftime('%Y-%m-%d'), extra={'target': file_name})
+        move_sidecar_files(file_path, target_folder, verbose=verbose)
+    except FileNotFoundError:
+        logging.error("File could not be moved. File not found.", extra={'target': file_name})
+        if summary: summary.inc('errors')
+
+# ------------------------------------------------------------
+# granularity wrappers (folder mode)
+# ------------------------------------------------------------
+
+def organize_files_by_day(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):
     organize_files(target_dir, mode, rename_files, midnight_shift, lambda date: date.strftime('%Y%m%d'), verbose=verbose, summary=summary)
 
-def organize_files_by_week(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):  # <— summary
+def organize_files_by_week(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):
     def get_folder_name(date_used):
         iso_year, iso_week, _ = date_used.isocalendar()
         start_date = datetime.datetime.strptime(f'{iso_year}-W{iso_week}-1', "%G-W%V-%u").date()
@@ -122,15 +213,19 @@ def organize_files_by_week(target_dir, mode, rename_files, midnight_shift, verbo
         return f'{start_date.strftime("%Y%m%d")}-{end_date.strftime("%Y%m%d")} - {WEEK_PREFIX}{iso_week:02d}'
     organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name, verbose=verbose, summary=summary)
 
-def organize_files_by_month(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):  # <— summary
+def organize_files_by_month(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):
     def get_folder_name(date_used):
         start_date = datetime.datetime(date_used.year, date_used.month, 1)
         end_date = datetime.datetime(date_used.year, date_used.month, calendar.monthrange(date_used.year, date_used.month)[1])
         return f'{start_date.strftime("%Y%m")} - {MONTH_NAMES[date_used.month]} {date_used.year}'
     organize_files(target_dir, mode, rename_files, midnight_shift, get_folder_name, verbose=verbose, summary=summary)
 
-def organize_files_by_year(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):  # <— summary
+def organize_files_by_year(target_dir, mode, rename_files, midnight_shift, verbose=False, summary=None):
     organize_files(target_dir, mode, rename_files, midnight_shift, lambda date: date.strftime('%Y'), verbose=verbose, summary=summary)
+
+# ------------------------------------------------------------
+# CLI
+# ------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
@@ -138,7 +233,12 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-v", "--version", action="version", version=f"ArchiveTools {__version__}")
-    parser.add_argument("-f", "--folder", type=str, required=True, help="Path to the folder to process")
+    add_target_args(
+        parser,
+        folder_help="Batch mode: organize all media inside this folder",
+        single_help="Single mode: move exactly this file into the correct dated subfolder",
+        required=True,
+    )
     parser.add_argument("--rename", action="store_true", help="Rename files on name conflict instead of skipping")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -167,32 +267,42 @@ def main():
 
     logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
-    target_dir = args.folder
+    # resolve target (-s expects a FILE, -f expects a FOLDER)
+    mode_sel, target = resolve_target(args, single_expect='file', folder_expect='folder')
+
     rename_files = args.rename
     mode = args.mode
-    midnight_shift = args.midnight_shift
+    midnight_shift = args.midnight_shift if isinstance(args.midnight_shift, int) else 0
 
-    # summary tracker (tiny + optional)
+    # summary tracker
     s = RunSummary()
     s.set('mode', mode)
     s.set('rename', bool(rename_files))
     s.set('midnight_shift_h', int(midnight_shift or 0))
-    granularity = None
 
-    if args.day:
-        granularity = 'day'
-        organize_files_by_day(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
-    elif args.week:
-        granularity = 'week'
-        organize_files_by_week(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
-    elif args.month:
-        granularity = 'month'
-        organize_files_by_month(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
-    elif args.year:
-        granularity = 'year'
-        organize_files_by_year(target_dir, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
+    # run
+    if mode_sel == 'single':
+        # operate on exactly one file; granularity used for destination naming
+        granularity = 'day' if args.day else 'week' if args.week else 'month' if args.month else 'year'
+        organize_single_file(target, mode, rename_files, midnight_shift, args, verbose=args.verbose, summary=s)
+    else:
+        # folder/batch mode
+        if args.day:
+            granularity = "day"
+            organize_files_by_day(target, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
+        elif args.week:
+            granularity = "week"
+            organize_files_by_week(target, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
+        elif args.month:
+            granularity = "month"
+            organize_files_by_month(target, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
+        elif args.year:
+            granularity = "year"
+            organize_files_by_year(target, mode, rename_files, midnight_shift, verbose=args.verbose, summary=s)
+        else:
+            granularity = None  # logically unreachable due to required group
 
-    # end-of-run summary (2–3 lines)
+    # Emit end-of-run summary
     s.set('granularity', granularity)
     found = s['found'] or 0
     moved = s['moved'] or 0
@@ -200,28 +310,56 @@ def main():
     skipped_conflict = s['skipped_conflict'] or 0
     folders_created = s['folders_created'] or 0
     renamed = s['renamed'] or 0
+    errors = s['errors'] or 0
     skipped_total = skipped_no_date + skipped_conflict
 
-    # source distribution
-    source_counts = {k.replace('source_', ''): v for k, v in s.counters.items() if k.startswith('source_')}
-    total_src = sum(source_counts.values())
-    src_line = None
-    if total_src:
-        def lab(k): return {'ffprobe': 'FFprobe', 'exif': 'EXIF'}.get(k, k.replace('_', ' ').title())
-        parts = [f"{lab(k)} {int(round(100.0*v/total_src))}%" for k, v in sorted(source_counts.items(), key=lambda kv: -kv[1])]
-        src_line = "Date sources — " + ", ".join(parts) + "."
+    line1 = (
+        f"Moved {moved}/{found} media files ({skipped_total} skipped: "
+        f"{skipped_no_date} no date, {skipped_conflict} name conflict). "
+        f"Created {folders_created} folders in {s.duration_hms}."
+    )
 
-    lines = [
-        f"Moved {moved}/{found} media files ({skipped_total} skipped: {skipped_no_date} no date, {skipped_conflict} name conflict). "
-        f"Created {folders_created} folders in {s.duration_hms}.",
-    ]
-    if src_line: lines.append(src_line)
-    lines.append(f"Renames: {renamed}. Mode: {s['mode']}. Midnight-shift: {s['midnight_shift_h']}h.")
-    s.emit_lines(lines, json_extra={
-        'found': found, 'moved': moved, 'skipped_no_date': skipped_no_date, 'skipped_conflict': skipped_conflict,
-        'folders_created': folders_created, 'renamed': renamed, 'granularity': s['granularity'],
-        'mode': s['mode'], 'midnight_shift_h': s['midnight_shift_h'], 'sources': source_counts
-    })
+    # Build date source distribution
+    source_counts = {k.replace("source_", ""): v for k, v in s.counters.items() if k.startswith("source_")}
+    total_src = sum(source_counts.values())
+    line2 = None
+    if total_src:
+        def nicelabel(k: str) -> str:
+            mapping = {"ffprobe": "FFprobe", "exif": "EXIF"}
+            return mapping.get(k, k.replace("_", " ").title())
+        parts = [
+            f"{nicelabel(k)} {int(round(100.0 * v / total_src))}%"
+            for k, v in sorted(source_counts.items(), key=lambda kv: -kv[1])
+        ]
+        line2 = "Date sources — " + ", ".join(parts) + "."
+
+    line3 = (
+        f"Renames: {renamed}. Mode: {s['mode']}. Midnight-shift: {s['midnight_shift_h']}h. Errors: {errors}."
+    )
+
+    lines = [line1]
+    if line2:
+        lines.append(line2)
+    lines.append(line3)
+
+    s.emit_lines(
+        lines,
+        json_extra={
+            "found": found,
+            "moved": moved,
+            "skipped_no_date": skipped_no_date,
+            "skipped_conflict": skipped_conflict,
+            "folders_created": folders_created,
+            "renamed": renamed,
+            "errors": errors,
+            "mode": s["mode"],
+            "granularity": s["granularity"],
+            "midnight_shift_h": s["midnight_shift_h"],
+            "sources": source_counts,
+            "target_mode": mode_sel,
+        },
+    )
+
 
 if __name__ == "__main__":
     main()
