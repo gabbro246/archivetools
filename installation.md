@@ -2,7 +2,8 @@
 
 ## Requirements
 
-- **Python 3.7+**
+* **Python 3.8+**
+* **FFmpeg** (both ffmpeg and ffprobe) available on your PATH
 
 ## Clone Repository and install ArchiveTools
 
@@ -14,4 +15,5 @@ pip install .
 ```
 
 ---
+
 © 2025 gabbro246. All rights reserved.
