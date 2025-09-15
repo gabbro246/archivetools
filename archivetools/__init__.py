@@ -318,3 +318,113 @@ def calculate_file_hash(file_path):
         logging.error(f"Permission error while accessing: {e}", extra={'target': os.path.basename(file_path)})
         raise
     return hash_sha256.hexdigest()
+
+# ========================================
+# summary helpers (end-of-run reporting)
+# ========================================
+from collections import defaultdict
+from datetime import timedelta
+
+def human_bytes(num_bytes: int) -> str:
+    """Return human friendly size (e.g., '31.7 GB')."""
+    try:
+        num = float(num_bytes)
+    except Exception:
+        return str(num_bytes)
+    units = ['B','KB','MB','GB','TB','PB']
+    for unit in units:
+        if num < 1024.0 or unit == units[-1]:
+            return f"{num:.1f} {unit}" if unit != 'B' else f"{int(num)} {unit}"
+        num /= 1024.0
+
+def format_duration(seconds: float) -> str:
+    """Return HH:MM:SS for a duration in seconds."""
+    if seconds is None:
+        return "00:00:00"
+    td = timedelta(seconds=int(round(seconds)))
+    total_seconds = int(td.total_seconds())
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+class RunSummary:
+    """
+    Lightweight tracker for end-of-run summaries.
+
+    Usage:
+        s = RunSummary()
+        s.inc('processed', 3)
+        s.add_bytes('freed_bytes', 12_345_678)
+        # ... do your work ...
+        s.emit_lines([
+            f"Processed {s['processed']} items in {s.duration_hms}.",
+            f"Freed {s.hbytes('freed_bytes')}. Failures: {s['failed']}.",
+        ], json_extra={'processed': s['processed'], 'failed': s['failed']})
+    """
+    def __init__(self):
+        self._t0 = datetime.datetime.now()
+        self._t1 = None
+        self.counters = defaultdict(int)   # any numeric counters
+        self.metrics  = {}                 # arbitrary other values
+        self.notes = []                    # misc strings (e.g., sample failures)
+
+    # timing
+    @property
+    def duration_s(self) -> float:
+        end = self._t1 or datetime.datetime.now()
+        return (end - self._t0).total_seconds()
+
+    @property
+    def duration_hms(self) -> str:
+        return format_duration(self.duration_s)
+
+    def stop(self):
+        self._t1 = datetime.datetime.now()
+
+    # counters & metrics
+    def inc(self, key: str, n: int = 1):
+        self.counters[key] += n
+
+    def add_bytes(self, key: str, n: int):
+        self.counters[key] += int(n)
+
+    def set(self, key: str, value):
+        self.metrics[key] = value
+
+    def note(self, text: str):
+        self.notes.append(text)
+
+    def __getitem__(self, key: str):
+        # convenience for counters/metrics
+        if key in self.counters:
+            return self.counters[key]
+        return self.metrics.get(key)
+
+    def hbytes(self, key: str) -> str:
+        """human-readable bytes for a counter/metric name."""
+        val = self[key]
+        return human_bytes(int(val or 0))
+
+    # emission
+    def emit_lines(self, lines, level=logging.INFO, json_extra=None):
+        """Log one or more human lines, then a compact JSON line at DEBUG."""
+        self.stop()
+        # Human-readable lines
+        for line in lines:
+            logging.log(level, line, extra={'target': 'SUMMARY'})
+        # Optional JSON line for machines
+        try:
+            payload = {
+                'duration_s': int(round(self.duration_s)),
+                'counters': dict(self.counters),
+                'metrics': self.metrics,
+            }
+            if self.notes:
+                payload['notes'] = self.notes
+            if json_extra:
+                payload.update(json_extra)
+            logging.debug("%s", payload, extra={'target': 'SUMMARY'})
+        except Exception:
+            # Never let summary logging crash the script
+            pass

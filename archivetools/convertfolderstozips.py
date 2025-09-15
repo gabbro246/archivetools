@@ -2,140 +2,281 @@ import os
 import shutil
 import argparse
 import pyzipper
-import hashlib
 import logging
-import sys
-from archivetools import __version__, calculate_file_hash, prompt_password
+from archivetools import __version__, calculate_file_hash, prompt_password, RunSummary
+
 
 def verify_zipped_contents(folder_path, zip_file_path, password=None, verbose=False):
+    """
+    Verify that every file in folder_path exists in the zip with identical SHA-256.
+    Returns True on full match, False otherwise.
+    """
     if verbose:
-        logging.debug(f"Verifying contents of {zip_file_path} against {folder_path}", extra={'target': os.path.basename(zip_file_path)})
+        logging.debug(
+            f"Verifying {os.path.basename(zip_file_path)} against {os.path.basename(folder_path)}",
+            extra={'target': os.path.basename(zip_file_path)},
+        )
+
+    # Map relative path -> sha256 from source folder
+    expected = {}
+    for root, _, files in os.walk(folder_path):
+        for name in files:
+            fpath = os.path.join(root, name)
+            rel = os.path.relpath(fpath, folder_path).replace("\\", "/")
+            try:
+                expected[rel] = calculate_file_hash(fpath)
+            except Exception as e:
+                logging.error(
+                    f"Failed to hash source file during verification: {e}",
+                    extra={'target': name},
+                )
+                return False
+
     try:
         with pyzipper.AESZipFile(zip_file_path, 'r') as zipf:
             if password:
                 zipf.setpassword(password.encode())
-            for root, _, files in os.walk(folder_path):
-                for file in files:
-                    relative_path = os.path.relpath(os.path.join(root, file), folder_path)
-                    
-                    if relative_path not in zipf.namelist():
-                        logging.warning(f"Missing file in zip", extra={'target': os.path.basename(relative_path)})
+            names = [n for n in zipf.namelist() if not n.endswith("/")]
+            # quick cardinality check
+            if len(names) != len(expected):
+                logging.error(
+                    "Verification failed: file count differs (zip %d vs source %d)",
+                    len(names), len(expected),
+                    extra={'target': os.path.basename(zip_file_path)},
+                )
+                return False
+            # compare hashes
+            for rel in names:
+                if rel not in expected:
+                    logging.error(
+                        "Verification failed: unexpected entry in zip: %s",
+                        rel,
+                        extra={'target': os.path.basename(zip_file_path)},
+                    )
+                    return False
+                with zipf.open(rel, 'r') as f:
+                    import hashlib
+                    h = hashlib.sha256()
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        h.update(chunk)
+                    if h.hexdigest() != expected[rel]:
+                        logging.error(
+                            "Verification failed: checksum mismatch for %s",
+                            rel,
+                            extra={'target': os.path.basename(zip_file_path)},
+                        )
                         return False
-
-                    original_hash = calculate_file_hash(os.path.join(root, file))
-                    zipped_hash = hashlib.sha256(zipf.read(relative_path)).hexdigest()
-
-                    if original_hash != zipped_hash:
-                        logging.warning(f"File hash mismatch", extra={'target': os.path.basename(relative_path)})
-                        return False
-        if verbose:
-            logging.debug("Verification passed.", extra={'target': os.path.basename(zip_file_path)})
-        return True
-    except PermissionError as e:
-        logging.error(f"Permission error during verification: {e}", extra={'target': os.path.basename(zip_file_path)})
+    except RuntimeError as e:
+        # bad password or encryption issue
+        logging.error(
+            f"Verification error (password/encryption): {e}",
+            extra={'target': os.path.basename(zip_file_path)},
+        )
         return False
     except Exception as e:
-        logging.error(f"Error during verification: {e}")
+        logging.error(
+            f"Error during verification: {e}",
+            extra={'target': os.path.basename(zip_file_path)},
+        )
         return False
+
+    if verbose:
+        logging.debug("Verification OK", extra={'target': os.path.basename(zip_file_path)})
+    return True
+
+
+def zip_folder(folder_path, zip_file_path, password=None, verbose=False, summary=None):
+    """
+    Create AES-256 zip (optional) for folder_path at zip_file_path.
+    """
+    s = summary
+    os.makedirs(os.path.dirname(zip_file_path), exist_ok=True)
+    try:
+        with pyzipper.AESZipFile(
+            zip_file_path,
+            'w',
+            compression=pyzipper.ZIP_DEFLATED,
+            compresslevel=6,
+        ) as zipf:
+            if password:
+                zipf.setencryption(pyzipper.WZ_AES, nbits=256)
+                zipf.setpassword(password.encode())
+            for root, _, files in os.walk(folder_path):
+                for name in files:
+                    src = os.path.join(root, name)
+                    arcname = os.path.relpath(src, folder_path).replace("\\", "/")
+                    if verbose:
+                        logging.debug(
+                            f"Adding to zip: {arcname}",
+                            extra={'target': os.path.basename(zip_file_path)},
+                        )
+                    try:
+                        zipf.write(src, arcname)
+                        if s:
+                            s.inc('files_archived')
+                            try:
+                                s.add_bytes('bytes_in', os.path.getsize(src))
+                            except OSError:
+                                pass
+                    except Exception as e:
+                        logging.error(f"Failed to add to zip: {e}", extra={'target': name})
+                        if s:
+                            s.inc('errors')
+        # bytes of zip
+        try:
+            if s:
+                s.add_bytes('bytes_zip', os.path.getsize(zip_file_path))
+        except OSError:
+            pass
+        return True
+    except PermissionError as e:
+        logging.error(
+            f"Permission error while zipping: {e}",
+            extra={'target': os.path.basename(zip_file_path)},
+        )
+        if s:
+            s.inc('errors')
+        return False
+    except Exception as e:
+        logging.error(
+            f"Error creating zip: {e}",
+            extra={'target': os.path.basename(zip_file_path)},
+        )
+        if s:
+            s.inc('errors')
+        return False
+
 
 def zip_and_verify(args):
     directory = args.folder
     verbose = args.verbose
+
+    # Determine password behavior
+    password = None
     if args.aes256:
         if args.aes256 is True:
+            # prompt securely
             try:
                 password = prompt_password(confirm=True)
-            except ValueError as e:
-                logging.error(str(e))
-                sys.exit(1)
+            except Exception as e:
+                logging.error(
+                    f"Password input error: {e}",
+                    extra={'target': os.path.basename(directory)},
+                )
+                return
         else:
-            password = args.aes256
-    else:
-        password = None
-    folders = [f for f in os.listdir(directory) if os.path.isdir(os.path.join(directory, f))]
-    for folder in folders:
-        folder_path = os.path.join(directory, folder)
-        zip_file_path = os.path.join(directory, f"{folder}.zip")
+            password = str(args.aes256)
+
+    s = RunSummary()
+    s.set('aes256', bool(password))
+
+    # iterate subfolders of the given directory
+    entries = [d for d in os.listdir(directory)]
+    folders = [
+        os.path.join(directory, d)
+        for d in entries
+        if os.path.isdir(os.path.join(directory, d))
+    ]
+    total = len(folders)
+
+    for folder_path in folders:
+        folder_name = os.path.basename(folder_path)
+        if verbose:
+            logging.debug(
+                f"Processing folder: {folder_name}",
+                extra={'target': folder_name},
+            )
+        zip_file_path = os.path.join(directory, f"{folder_name}.zip")
+        s.inc('folders_scanned')
 
         if os.path.exists(zip_file_path):
-            logging.warning(f"Zip file already exists. Skipping.", extra={'target': os.path.basename(zip_file_path)})
-            if verbose:
-                logging.debug(f"Skipping existing zip: {zip_file_path}", extra={'target': os.path.basename(zip_file_path)})
+            logging.info("Zip already exists. Skipping.", extra={'target': os.path.basename(zip_file_path)})
+            s.inc('skipped_exists')
             continue
 
+        ok_zip = zip_folder(folder_path, zip_file_path, password=password, verbose=verbose, summary=s)
+        if not ok_zip:
+            s.inc('zip_failures')
+            continue
+
+        s.inc('zipped')
         if verbose:
-            logging.debug(f"Creating ZIP: {zip_file_path} from folder: {folder_path}", extra={'target': os.path.basename(folder_path)})
+            logging.debug(
+                f"Created zip: {zip_file_path}",
+                extra={'target': os.path.basename(zip_file_path)},
+            )
 
-        try:
-            if password:
-                with pyzipper.AESZipFile(zip_file_path, 'w', compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zipf:
-                    zipf.setpassword(password.encode())
-                    zipf.setencryption(pyzipper.WZ_AES, nbits=256)
-                    for root, _, files in os.walk(folder_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            arcname = os.path.relpath(file_path, folder_path)
-                            if verbose:
-                                logging.debug(f"Adding file to ZIP: {arcname}", extra={'target': os.path.basename(file_path)})
-                            try:
-                                zipf.write(file_path, arcname)
-                            except Exception as e:
-                                logging.error(f"Failed to write file to zip: {e}", extra={'target': file_path})
-                                raise
-            else:
-                with pyzipper.AESZipFile(zip_file_path, 'w', compression=pyzipper.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(folder_path):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            arcname = os.path.relpath(file_path, folder_path)
-                            if verbose:
-                                logging.debug(f"Adding file to ZIP: {arcname}", extra={'target': os.path.basename(file_path)})
-                            try:
-                                zipf.write(file_path, arcname)
-                            except Exception as e:
-                                logging.error(f"Failed to write file to zip: {e}", extra={'target': file_path})
-                                raise
-
-            if verbose:
-                logging.debug(f"Starting verification for ZIP: {zip_file_path}", extra={'target': os.path.basename(zip_file_path)})
-
-            if verify_zipped_contents(folder_path, zip_file_path, password, verbose=verbose):
-                logging.info(f"Verification successful. Deleting original folder.", extra={'target': os.path.basename(zip_file_path)})
-                if verbose:
-                    logging.debug(f"Deleting folder: {folder_path}", extra={'target': os.path.basename(folder_path)})
+        # verify
+        verified = verify_zipped_contents(folder_path, zip_file_path, password=password, verbose=verbose)
+        if verified:
+            s.inc('verified_ok')
+            try:
                 shutil.rmtree(folder_path)
-            else:
-                logging.warning(f"Verification failed. Original folder not deleted.", extra={'target': os.path.basename(zip_file_path)})
+                s.inc('sources_deleted')
+                logging.info("Verification OK — deleted source folder.", extra={'target': folder_name})
+            except Exception as e:
+                logging.error(f"Failed to delete source folder after verify: {e}", extra={'target': folder_name})
+                s.inc('errors')
+        else:
+            s.inc('verify_failures')
+            logging.warning("Verification failed — keeping source folder and zip for inspection.", extra={'target': folder_name})
 
-        except PermissionError as e:
-            logging.error(f"Permission error: {e}", extra={'target': os.path.basename(folder_path)})
-            if verbose:
-                logging.debug(f"Permission error on: {folder_path}", extra={'target': os.path.basename(folder_path)})
+    # emit end-of-run summary
+    zipped = s['zipped'] or 0
+    skipped = s['skipped_exists'] or 0
+    files_archived = s['files_archived'] or 0
+    verified_ok = s['verified_ok'] or 0
+    sources_deleted = s['sources_deleted'] or 0
+    verify_fail = s['verify_failures'] or 0
+    errors = s['errors'] or 0
 
-        except Exception as e:
-            logging.error(f"Error zipping or verifying folder: {e}", extra={'target': os.path.basename(folder)})
-            if os.path.exists(zip_file_path):
-                if verbose:
-                    logging.debug(f"Removing incomplete zip: {zip_file_path}", extra={'target': os.path.basename(zip_file_path)})
-                os.remove(zip_file_path)
+    bytes_in = s['bytes_in'] or 0
+    bytes_zip = s['bytes_zip'] or 0
+    saved_pct = int(round(100.0 * (bytes_in - bytes_zip) / bytes_in)) if bytes_in else 0
+
+    line1 = f"Zipped {zipped}/{total} folders ({skipped} skipped: zip existed). {files_archived} files archived in {s.duration_hms}."
+    line2 = f"Verification OK for {verified_ok} archives — deleted {sources_deleted} source folders. AES-256: {'enabled' if s['aes256'] else 'disabled'}."
+    line3 = f"Size {s.hbytes('bytes_in')} → {s.hbytes('bytes_zip')} ({saved_pct}% saved). Failures: {verify_fail + errors}."
+
+    s.emit_lines(
+        [line1, line2, line3],
+        json_extra={
+            'folders_total': total,
+            'zipped': zipped,
+            'skipped_exists': skipped,
+            'files_archived': files_archived,
+            'verified_ok': verified_ok,
+            'verify_failures': verify_fail,
+            'sources_deleted': sources_deleted,
+            'bytes_in': bytes_in,
+            'bytes_zip': bytes_zip,
+            'saved_pct': saved_pct,
+            'aes256': s['aes256'],
+            'errors': errors,
+        },
+    )
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Compresses each folder in the target directory into a separate ZIP archive. Verifies the integrity of each archive before deleting the original folder.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description="Converts each subfolder into a ZIP archive (optional AES-256). Verifies archive integrity and deletes source folder on success.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
     parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
-    parser.add_argument('--aes256', nargs='?', const=True, help='Enable AES-256 encryption. If no password is given, you will be prompted securely.')
+    parser.add_argument(
+        '--aes256',
+        nargs='?',
+        const=True,
+        help='Enable AES-256 encryption. Provide a password directly, or pass the flag alone to be prompted.'
+    )
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = parser.parse_args()
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
     zip_and_verify(args)
+
 
 if __name__ == "__main__":
     main()
