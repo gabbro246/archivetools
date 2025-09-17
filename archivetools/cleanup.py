@@ -2,256 +2,282 @@ import os
 import argparse
 import logging
 import shutil
+
 from archivetools import (
-    __version__,
+    configure_logging,
+    add_target_args,
+    resolve_target,
+    iter_files,
+    iter_dirs,
+    is_hidden,
     SIDECAR_EXTENSIONS,
     JUNK_FILENAMES,
     JUNK_PREFIXES,
     RunSummary,
-    add_target_args,
-    resolve_target,
 )
 
-def is_empty_file(path):
+# ------------------------------------------------------------
+# Internal helpers
+# ------------------------------------------------------------
+
+def _is_empty_file(path: str) -> bool:
     try:
         return os.path.getsize(path) == 0
     except OSError:
         return False
 
-def is_junk_file(name):
-    if name in JUNK_FILENAMES:
-        return True
-    for prefix in JUNK_PREFIXES:
-        if name.startswith(prefix):
-            return True
-    return False
 
-def _folder_size_bytes(path):
-    total = 0
-    for root, _, files in os.walk(path):
-        for n in files:
-            fp = os.path.join(root, n)
-            try:
-                total += os.path.getsize(fp)
-            except OSError:
-                pass
-    return total
-
-def cleanup_files(folder, verbose=False, summary=None):
-    """
-    Batch mode (-f): remove junk files/folders, empty sidecars, then empty folders.
-    """
-    removed_files = []
-    removed_folders = []
-    s = summary
-
-    for root, dirs, files in os.walk(folder, topdown=True):
-        # ignore hidden
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
-        files = [f for f in files if not f.startswith('.')]
-
-        # files
-        for name in files:
-            file_path = os.path.join(root, name)
-            ext = os.path.splitext(name)[1].lower()
-
-            if ext in SIDECAR_EXTENSIONS and is_empty_file(file_path):
-                try:
-                    size = 0
-                    try:
-                        size = os.path.getsize(file_path)
-                    except OSError:
-                        pass
-                    if verbose:
-                        logging.debug(f"Deleting empty sidecar file: {file_path}", extra={'target': name})
-                    os.remove(file_path)
-                    removed_files.append(file_path)
-                    if s:
-                        s.inc('files_removed'); s.inc('empty_sidecars_removed'); s.add_bytes('freed_bytes', size)
-                    logging.info("Deleted empty sidecar file.", extra={'target': name})
-                except Exception as e:
-                    logging.error(f"Error deleting file: {e}", extra={'target': name})
-                    if s: s.inc('errors')
-                continue
-
-            if is_junk_file(name):
-                try:
-                    size = 0
-                    try:
-                        size = os.path.getsize(file_path)
-                    except OSError:
-                        pass
-                    if verbose:
-                        logging.debug(f"Deleting junk file: {file_path}", extra={'target': name})
-                    os.remove(file_path)
-                    removed_files.append(file_path)
-                    if s:
-                        s.inc('files_removed'); s.inc('junk_files_removed'); s.add_bytes('freed_bytes', size)
-                    logging.info("Deleted junk file.", extra={'target': name})
-                except Exception as e:
-                    logging.error(f"Error deleting file: {e}", extra={'target': name})
-                    if s: s.inc('errors')
-
-        # junk folders
-        for d in dirs[:]:
-            dir_path = os.path.join(root, d)
-            if is_junk_file(d):
-                try:
-                    size = _folder_size_bytes(dir_path)
-                    if verbose:
-                        logging.debug(f"Deleting junk folder: {dir_path}", extra={'target': d})
-                    shutil.rmtree(dir_path)
-                    removed_folders.append(dir_path)
-                    if s:
-                        s.inc('folders_removed'); s.inc('junk_folders_removed'); s.add_bytes('freed_bytes', size)
-                    logging.info("Deleted junk folder.", extra={'target': d})
-                    dirs.remove(d)
-                except Exception as e:
-                    logging.error(f"Error deleting folder: {e}", extra={'target': d})
-                    if s: s.inc('errors')
-
-    # empty folders (bottom-up)
-    for root, dirs, _ in os.walk(folder, topdown=False):
-        for d in dirs:
-            dir_path = os.path.join(root, d)
-            try:
-                if not os.listdir(dir_path):
-                    if verbose:
-                        logging.debug(f"Deleting empty folder: {dir_path}", extra={'target': d})
-                    os.rmdir(dir_path)
-                    removed_folders.append(dir_path)
-                    if s:
-                        s.inc('folders_removed'); s.inc('empty_folders_removed')
-                    logging.info("Deleted empty folder.", extra={'target': d})
-            except Exception as e:
-                logging.error(f"Error deleting folder: {e}", extra={'target': d})
-                if s: s.inc('errors')
+def _delete_file(path: str, *, dry_run: bool, verbose: bool, summary: RunSummary | None, reason_key: str, reason_label: str) -> None:
+    name = os.path.basename(path)
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = 0
 
     if verbose:
         logging.debug(
-            f"Cleanup finished. Removed {len(removed_files)} files and {len(removed_folders)} folders.",
-            extra={'target': os.path.basename(folder)}
+            "%s %s",
+            "Would delete" if dry_run else "Deleting",
+            path,
+            extra={"target": name},
         )
-
-def clean_single_file(file_path, verbose=False, summary=None):
-    """
-    Single mode (-s): evaluate exactly one file; delete if junk or empty sidecar.
-    """
-    s = summary
-    name = os.path.basename(file_path)
-    if not os.path.isfile(file_path):
-        logging.error("The specified path is not a file.", extra={'target': name})
-        if s: s.inc('errors')
-        return
-
-    ext = os.path.splitext(name)[1].lower()
-
-    # empty sidecar?
-    if ext in SIDECAR_EXTENSIONS and is_empty_file(file_path):
+    if not dry_run:
         try:
-            sz = 0
-            try:
-                sz = os.path.getsize(file_path)
-            except OSError:
-                pass
-            if verbose:
-                logging.debug(f"Deleting empty sidecar file: {file_path}", extra={'target': name})
-            os.remove(file_path)
-            if s:
-                s.inc('files_removed'); s.inc('empty_sidecars_removed'); s.add_bytes('freed_bytes', sz)
-            logging.info("Deleted empty sidecar file.", extra={'target': name})
+            os.remove(path)
         except Exception as e:
-            logging.error(f"Error deleting file: {e}", extra={'target': name})
-            if s: s.inc('errors')
-        return
+            logging.error("Failed to delete %s: %s", path, e, extra={"target": name})
+            if summary:
+                summary.inc("errors")
+            return
+    logging.info("Removed %s", reason_label, extra={"target": name})
+    if summary:
+        summary.inc("files_removed")
+        summary.inc(reason_key)
+        summary.add_bytes("freed_bytes", size)
 
-    # junk file?
-    if is_junk_file(name):
-        try:
-            sz = 0
-            try:
-                sz = os.path.getsize(file_path)
-            except OSError:
-                pass
-            if verbose:
-                logging.debug(f"Deleting junk file: {file_path}", extra={'target': name})
-            os.remove(file_path)
-            if s:
-                s.inc('files_removed'); s.inc('junk_files_removed'); s.add_bytes('freed_bytes', sz)
-            logging.info("Deleted junk file.", extra={'target': name})
-        except Exception as e:
-            logging.error(f"Error deleting file: {e}", extra={'target': name})
-            if s: s.inc('errors')
-        return
 
-    # not junk / not empty sidecar -> leave as-is
+def _delete_folder(path: str, *, dry_run: bool, verbose: bool, summary: RunSummary | None, reason_key: str, reason_label: str) -> None:
+    name = os.path.basename(path)
     if verbose:
-        logging.debug("No cleanup action for file.", extra={'target': name})
-    logging.info("No cleanup needed for this file.", extra={'target': name})
+        logging.debug(
+            "%s folder %s",
+            "Would remove" if dry_run else "Removing",
+            path,
+            extra={"target": name},
+        )
+    if not dry_run:
+        try:
+            shutil.rmtree(path)
+        except Exception as e:
+            logging.error("Failed to remove folder %s: %s", path, e, extra={"target": name})
+            if summary:
+                summary.inc("errors")
+            return
+    logging.info("Removed %s", reason_label, extra={"target": name})
+    if summary:
+        summary.inc("folders_removed")
+        summary.inc(reason_key)
 
+
+def _cleanup_junk_files(root: str, *, recursive: bool, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Remove known junk files (e.g., .DS_Store, desktop.ini, Thumbs.db) and resource-fork
+    '._' prefixed files. Honors include_hidden.
+    """
+    junk_names = set(JUNK_FILENAMES)
+    prefixes = tuple(JUNK_PREFIXES)
+
+    # Collect files (non-recursive by default)
+    for path in iter_files(root, recursive=recursive, include_hidden=include_hidden):
+        name = os.path.basename(path)
+        if name in junk_names or name.startswith(prefixes):
+            _delete_file(path, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="junk_files_removed", reason_label="junk file")
+
+
+def _cleanup_empty_sidecars(root: str, *, recursive: bool, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Remove empty sidecar files (size == 0) based on SIDECAR_EXTENSIONS.
+    """
+    sidecars = set(SIDECAR_EXTENSIONS)
+    for path in iter_files(root, recursive=recursive, include_hidden=include_hidden):
+        _, ext = os.path.splitext(path)
+        if ext.lower() in sidecars and _is_empty_file(path):
+            _delete_file(path, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="empty_sidecars_removed", reason_label="empty sidecar")
+
+
+def _cleanup_junk_folders(root: str, *, recursive: bool, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Remove folders that are known junk by name (e.g., '__MACOSX', '.Trashes', '.Spotlight-V100').
+    Honors include_hidden.
+    """
+    junk_names = set(JUNK_FILENAMES)
+    prefixes = tuple(JUNK_PREFIXES)
+    # Choose directory iteration approach
+    if recursive:
+        dirs = list(iter_dirs(root, recursive=True, include_hidden=include_hidden))
+    else:
+        dirs = list(iter_dirs(root, recursive=False, include_hidden=include_hidden))
+
+    # Remove junk-named or junk-prefixed folders. Remove deepest first to minimize failures.
+    dirs.sort(key=lambda p: p.count(os.sep), reverse=True)
+    for d in dirs:
+        name = os.path.basename(d)
+        if name in junk_names or name.startswith(prefixes):
+            _delete_folder(d, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="junk_folders_removed", reason_label="junk folder")
+
+
+def _remove_empty_dirs(root: str, *, recursive: bool, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Remove empty directories.
+    - Non-recursive: only consider immediate subfolders of root.
+    - Recursive: walk bottom-up and remove any empty descendant directories.
+    """
+    if not recursive:
+        # Only immediate children
+        for d in iter_dirs(root, recursive=False, include_hidden=include_hidden):
+            try:
+                if not os.listdir(d):
+                    _delete_folder(d, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="empty_folders_removed", reason_label="empty folder")
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                logging.error("Failed to check folder %s: %s", d, e, extra={"target": os.path.basename(d)})
+                if summary:
+                    summary.inc("errors")
+        return
+
+    # Recursive: bottom-up traversal
+    for curr, dirs, files in os.walk(root, topdown=False):
+        if os.path.abspath(curr) == os.path.abspath(root):
+            continue  # don't remove root
+        if not include_hidden and is_hidden(curr):
+            continue
+        try:
+            if not os.listdir(curr):
+                _delete_folder(curr, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="empty_folders_removed", reason_label="empty folder")
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            logging.error("Failed to remove empty folder %s: %s", curr, e, extra={"target": os.path.basename(curr)})
+            if summary:
+                summary.inc("errors")
+
+
+def _batch_mode(root: str, *, recursive: bool, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Clean up a folder: remove junk files, empty sidecars, junk folders, and empty folders.
+    """
+    # Order: junk files -> empty sidecars -> junk folders -> empty folders
+    _cleanup_junk_files(root, recursive=recursive, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _cleanup_empty_sidecars(root, recursive=recursive, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _cleanup_junk_folders(root, recursive=recursive, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _remove_empty_dirs(root, recursive=recursive, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+
+
+def _single_mode(folder: str, *, include_hidden: bool, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
+    """
+    Single mode: clean THIS folder only (non-recursive), then try to remove it if it becomes empty.
+    """
+    _cleanup_junk_files(folder, recursive=False, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _cleanup_empty_sidecars(folder, recursive=False, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _cleanup_junk_folders(folder, recursive=False, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+    _remove_empty_dirs(folder, recursive=False, include_hidden=include_hidden, dry_run=dry_run, verbose=verbose, summary=summary)
+
+    # If the folder itself is now empty, remove it (nice cleanup when called on junk folders directly)
+    try:
+        if not os.listdir(folder):
+            _delete_folder(folder, dry_run=dry_run, verbose=verbose, summary=summary, reason_key="empty_folders_removed", reason_label="empty folder")
+    except Exception:
+        pass
+
+
+# ------------------------------------------------------------
+# CLI
+# ------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Deletes empty sidecar files, unnecessary junk files/folders, and empty folders. Use -f for whole-folder cleanup or -s for a single file.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description=(
+            "Remove junk files (e.g., .DS_Store, Thumbs.db), empty sidecars, junk-named folders (e.g., __MACOSX), "
+            "and empty directories. Non-recursive by default — use --recursive to include subfolders. "
+            "Hidden files are ignored by default; pass --include-hidden to also clean hidden items."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+
     add_target_args(
         parser,
-        folder_help="Batch mode: clean the contents of this folder (and subfolders)",
-        single_help="Single mode: evaluate this one file for cleanup",
+        folder_help="Batch mode: clean this folder (non-recursive by default; use --recursive to include subfolders).",
+        single_help="Single mode: clean this specific folder only (non-recursive).",
         required=True,
     )
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+
+    parser.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting anything")
+
     args = parser.parse_args()
+    configure_logging(getattr(args, "verbose", False))
 
-    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
+    mode_sel, target = resolve_target(args, single_expect="folder", folder_expect="folder")
 
-    # -s expects a FILE, -f expects a FOLDER
-    mode_sel, target = resolve_target(args, single_expect='file', folder_expect='folder')
-
-    # Summary tracker
     s = RunSummary()
+    s.set("dry_run", bool(getattr(args, "dry_run", False)))
+    s.set("recursive", bool(getattr(args, "recursive", False)))
+    s.set("include_hidden", bool(getattr(args, "include_hidden", False)))
 
-    if mode_sel == 'single':
-        clean_single_file(target, verbose=args.verbose, summary=s)
+    if mode_sel == "single":
+        _single_mode(
+            target,
+            include_hidden=bool(getattr(args, "include_hidden", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+            verbose=getattr(args, "verbose", False),
+            summary=s,
+        )
     else:
-        cleanup_files(target, verbose=args.verbose, summary=s)
+        _batch_mode(
+            target,
+            recursive=bool(getattr(args, "recursive", False)),
+            include_hidden=bool(getattr(args, "include_hidden", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+            verbose=getattr(args, "verbose", False),
+            summary=s,
+        )
 
-    # Emit end-of-run summary
-    files_removed = s['files_removed'] or 0
-    junk_files_removed = s['junk_files_removed'] or 0
-    empty_sidecars_removed = s['empty_sidecars_removed'] or 0
-    folders_removed = s['folders_removed'] or 0
-    junk_folders_removed = s['junk_folders_removed'] or 0
-    empty_folders_removed = s['empty_folders_removed'] or 0
-    freed_h = s.hbytes('freed_bytes')
-    errors = s['errors'] or 0
-
-    if mode_sel == 'single':
-        action_line = f"Checked one file. {'Removed it' if files_removed else 'No removal needed'}."
-    else:
-        action_line = "Completed folder cleanup."
+    files_removed = s.get("files_removed", 0) or 0
+    junk_files_removed = s.get("junk_files_removed", 0) or 0
+    empty_sidecars_removed = s.get("empty_sidecars_removed", 0) or 0
+    folders_removed = s.get("folders_removed", 0) or 0
+    junk_folders_removed = s.get("junk_folders_removed", 0) or 0
+    empty_folders_removed = s.get("empty_folders_removed", 0) or 0
+    errors = s.get("errors", 0) or 0
 
     line1 = (
-        f"{action_line} Removed {files_removed} file(s) "
-        f"({junk_files_removed} junk, {empty_sidecars_removed} empty sidecars) and "
-        f"{folders_removed} folder(s) ({junk_folders_removed} junk, {empty_folders_removed} empty) "
-        f"in {s.duration_hms}."
+        f"Removed {files_removed} file(s) "
+        f"(junk: {junk_files_removed}, empty sidecars: {empty_sidecars_removed}); "
+        f"Removed {folders_removed} folder(s) "
+        f"(junk: {junk_folders_removed}, empty: {empty_folders_removed})."
     )
-    line2 = f"Freed {freed_h}. Errors: {errors}."
+    line2 = (
+        f"Freed {s.get('freed_bytes', 0) or 0} bytes. "
+        f"Recursive: {s['recursive']}. Include hidden: {s['include_hidden']}. Dry-run: {s['dry_run']}. "
+        f"Errors: {errors}."
+    )
 
     s.emit_lines([line1, line2], json_extra={
-        'target_mode': mode_sel,
-        'files_removed': files_removed,
-        'junk_files_removed': junk_files_removed,
-        'empty_sidecars_removed': empty_sidecars_removed,
-        'folders_removed': folders_removed,
-        'junk_folders_removed': junk_folders_removed,
-        'empty_folders_removed': empty_folders_removed,
-        'freed_bytes': s['freed_bytes'] or 0,
-        'errors': errors,
+        "target_mode": mode_sel,
+        "files_removed": files_removed,
+        "junk_files_removed": junk_files_removed,
+        "empty_sidecars_removed": empty_sidecars_removed,
+        "folders_removed": folders_removed,
+        "junk_folders_removed": junk_folders_removed,
+        "empty_folders_removed": empty_folders_removed,
+        "freed_bytes": s.get("freed_bytes", 0) or 0,
+        "errors": errors,
+        "recursive": s["recursive"],
+        "include_hidden": s["include_hidden"],
+        "dry_run": s["dry_run"],
+        "target": target,
     })
+
 
 if __name__ == "__main__":
     main()

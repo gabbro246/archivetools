@@ -1,113 +1,160 @@
 import os
-import sys
 import argparse
-import datetime
+import datetime as dt
 import logging
 import subprocess
-from PIL import Image, ExifTags  # noqa: F401
+
+from PIL import Image  # noqa: F401
 import piexif
 
 from archivetools import (
-    __version__,
-    get_dates_from_file,
-    select_date,
-    SIDECAR_EXTENSIONS,
-    MEDIA_EXTENSIONS,
-    RunSummary,
+    configure_logging,
     add_target_args,
     resolve_target,
+    iter_files,
+    MEDIA_EXTENSIONS,
+    SIDECAR_EXTENSIONS,
+    get_dates_from_file,
+    select_date,
+    RunSummary,
 )
 
 # -----------------------------
 # low-level setters
 # -----------------------------
 
-def set_file_timestamp(file_path, selected_date, dry_run=False, verbose=False):
+def set_file_timestamp(file_path: str, selected_date: dt.datetime, *, dry_run: bool = False, verbose: bool = False) -> bool:
     if verbose:
         logging.debug(
-            f"{'Would set' if dry_run else 'Setting'} OS timestamps for {file_path} to {selected_date}",
-            extra={'target': os.path.basename(file_path)},
+            "%s OS timestamps for %s -> %s",
+            "Would set" if dry_run else "Setting",
+            os.path.basename(file_path),
+            selected_date,
+            extra={"target": os.path.basename(file_path)},
         )
     try:
         if not dry_run:
             ts = selected_date.timestamp()
+            # atime, mtime
             os.utime(file_path, (ts, ts))
         return True
     except Exception as e:
-        logging.error("Failed to set file dates: %s", e, extra={'target': os.path.basename(file_path)})
+        logging.error("Failed to set file timestamps: %s", e, extra={"target": os.path.basename(file_path)})
         return False
 
 
-def set_sidecar_timestamps(file_path, selected_date, dry_run=False, verbose=False):
-    base_path, _ = os.path.splitext(file_path)
-    updated = False
+def set_sidecar_timestamps(file_path: str, selected_date: dt.datetime, *, dry_run: bool = False, verbose: bool = False) -> int:
+    """
+    Set timestamps on sidecar files that share the same basename.
+    Returns how many sidecars were updated.
+    """
+    base, _ = os.path.splitext(file_path)
+    count = 0
     for ext in SIDECAR_EXTENSIONS:
-        sidecar_path = f"{base_path}{ext}"
-        if os.path.exists(sidecar_path):
-            if verbose:
-                logging.debug(
-                    f"{'Would set' if dry_run else 'Setting'} sidecar timestamps for {sidecar_path} to {selected_date}",
-                    extra={'target': os.path.basename(sidecar_path)},
-                )
-            try:
-                if not dry_run:
-                    ts = selected_date.timestamp()
-                    os.utime(sidecar_path, (ts, ts))
-                updated = True
-            except Exception as e:
-                logging.error("Failed to set sidecar file dates: %s", e, extra={'target': os.path.basename(sidecar_path)})
-    return updated
+        sidecar = f"{base}{ext}"
+        if not os.path.exists(sidecar):
+            continue
+        if verbose:
+            logging.debug(
+                "%s sidecar timestamps for %s -> %s",
+                "Would set" if dry_run else "Setting",
+                os.path.basename(sidecar),
+                selected_date,
+                extra={"target": os.path.basename(sidecar)},
+            )
+        try:
+            if not dry_run:
+                ts = selected_date.timestamp()
+                os.utime(sidecar, (ts, ts))
+            count += 1
+        except Exception as e:
+            logging.error("Failed to set sidecar timestamps: %s", e, extra={"target": os.path.basename(sidecar)})
+    return count
 
 
-def set_exif_date(file_path, selected_date, dry_run=False, verbose=False):
+def set_exif_date(file_path: str, selected_date: dt.datetime, *, dry_run: bool = False, verbose: bool = False) -> bool:
+    """
+    Write EXIF dates for JPEG/TIFF files (DateTime, DateTimeOriginal, DateTimeDigitized).
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in (".jpg", ".jpeg", ".tif", ".tiff"):
+        return False
+
     if verbose:
         logging.debug(
-            f"{'Would set' if dry_run else 'Setting'} EXIF date for {file_path} to {selected_date}",
-            extra={'target': os.path.basename(file_path)},
+            "%s EXIF date for %s -> %s",
+            "Would set" if dry_run else "Setting",
+            os.path.basename(file_path),
+            selected_date,
+            extra={"target": os.path.basename(file_path)},
         )
     try:
         if dry_run:
             return True
+
+        dt_str = selected_date.strftime("%Y:%m:%d %H:%M:%S")
         try:
             exif_dict = piexif.load(file_path)
         except Exception:
+            # If no EXIF exists, start fresh
             exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}, "thumbnail": None}
-        dt_str = selected_date.strftime("%Y:%m:%d %H:%M:%S")
+
         exif_dict["0th"][piexif.ImageIFD.DateTime] = dt_str.encode()
         exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = dt_str.encode()
         exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = dt_str.encode()
+
         exif_bytes = piexif.dump(exif_dict)
         piexif.insert(exif_bytes, file_path)
         return True
     except Exception as e:
-        logging.error("Failed to write EXIF date: %s", e, extra={'target': os.path.basename(file_path)})
+        logging.error("Failed to write EXIF date: %s", e, extra={"target": os.path.basename(file_path)})
         return False
 
 
-def set_ffprobe_date(file_path, selected_date, dry_run=False, verbose=False):
+def set_ffprobe_date(file_path: str, selected_date: dt.datetime, *, dry_run: bool = False, verbose: bool = False) -> bool:
+    """
+    For MP4/MOV, re-mux with creation_time metadata using ffmpeg (stream copy).
+    """
+    base, ext = os.path.splitext(file_path)
+    ext = ext.lower()
+    if ext not in (".mp4", ".mov", ".m4v"):
+        return False
+
+
     if verbose:
         logging.debug(
-            f"{'Would set' if dry_run else 'Setting'} FFprobe creation_time for {file_path} to {selected_date}",
-            extra={'target': os.path.basename(file_path)},
+            "%s FFprobe creation_time for %s -> %s",
+            "Would set" if dry_run else "Setting",
+            os.path.basename(file_path),
+            selected_date,
+            extra={"target": os.path.basename(file_path)},
         )
     try:
         if dry_run:
             return True
-        # re-mux with creation_time metadata
-        temp_file = file_path + ".tmp.mp4"
+        # keep the container identical to the input
+        temp_file = f"{base}.tmp{ext}"
         cmd = [
             "ffmpeg",
-            "-i", file_path,
-            "-metadata", f"creation_time={selected_date.isoformat()}",
-            "-codec", "copy",
-            temp_file,
             "-y",
+            "-i", file_path,
+            "-map", "0",
+            "-codec", "copy",
+            "-metadata", f"creation_time={selected_date.isoformat()}",
+            temp_file,
         ]
+
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         os.replace(temp_file, file_path)
         return True
     except Exception as e:
-        logging.error("Failed to write FFprobe creation_time: %s", e, extra={'target': os.path.basename(file_path)})
+        logging.error("Failed to write FFprobe creation_time: %s", e, extra={"target": os.path.basename(file_path)})
+        # Clean up temp if present
+        try:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        except Exception:
+            pass
         return False
 
 
@@ -115,79 +162,95 @@ def set_ffprobe_date(file_path, selected_date, dry_run=False, verbose=False):
 # per-file coordinator
 # -----------------------------
 
-def set_selected_date(file_path, selected_date_info, current_dates, *, force=False, dry_run=False, verbose=False, summary=None):
+def set_selected_date(
+    file_path: str,
+    selected_date_info: tuple[str, dt.datetime] | None,
+    current_dates: list[tuple[str, dt.datetime]],
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+    verbose: bool = False,
+    summary: RunSummary | None = None,
+) -> None:
+    """
+    Apply the chosen date to file system timestamps, EXIF (jpg/tiff), ffprobe (mp4/mov), and sidecars.
+    """
+    name = os.path.basename(file_path)
+
     if not selected_date_info:
-        if verbose:
-            logging.debug("No date selected for %s. Skipping.", file_path, extra={'target': os.path.basename(file_path)})
-        logging.info("No date selected. Skipping.", extra={'target': os.path.basename(file_path)})
-        if summary is not None:
-            summary.inc('no_date')
+        logging.info("No usable date — skipping.", extra={"target": name})
+        if summary:
+            summary.inc("no_date")
         return
 
     date_source, selected_date = selected_date_info
-    actions_taken = []
-    if summary is not None:
-        summary.inc('processed')
+
+    if summary:
+        summary.inc("processed")
         summary.inc(f"source_{str(date_source).lower()}")
 
-        # track earliest/latest applied
-        earliest = summary['earliest_date']
-        latest = summary['latest_date']
+        # Track min/max
+        earliest = summary.get("earliest_date")
+        latest = summary.get("latest_date")
         try:
             if earliest is None or selected_date < earliest:
-                summary.set('earliest_date', selected_date)
+                summary.set("earliest_date", selected_date)
             if latest is None or selected_date > latest:
-                summary.set('latest_date', selected_date)
+                summary.set("latest_date", selected_date)
         except Exception:
             pass
 
     if verbose:
         logging.debug(
             "Selected date for %s: %s (source: %s)",
-            file_path, selected_date, date_source,
-            extra={'target': os.path.basename(file_path)},
+            name, selected_date, date_source,
+            extra={"target": name},
         )
 
-    if set_file_timestamp(file_path, selected_date, dry_run=dry_run, verbose=verbose):
-        actions_taken.append("File timestamps")
-        if summary is not None:
-            summary.inc('timestamps')
+    actions = []
 
-    if set_sidecar_timestamps(file_path, selected_date, dry_run=dry_run, verbose=verbose):
-        actions_taken.append("Sidecar(s)")
-        if summary is not None:
-            summary.inc('sidecars')
+    # Always set file timestamps (unless force=False and they already match to-the-second)
+    try:
+        mtime = dt.datetime.fromtimestamp(os.path.getmtime(file_path))
+        already = (mtime.replace(microsecond=0) == selected_date.replace(microsecond=0))
+    except Exception:
+        already = False
 
-    # EXIF for JPEGs
-    if file_path.lower().endswith(('.jpg', '.jpeg')):
-        if set_exif_date(file_path, selected_date, dry_run=dry_run, verbose=verbose):
-            actions_taken.append("EXIF")
-            if summary is not None:
-                summary.inc('exif')
-        else:
-            if summary is not None:
-                summary.inc('errors')
+    if force or not already:
+        if set_file_timestamp(file_path, selected_date, dry_run=dry_run, verbose=verbose):
+            actions.append("File timestamps")
+            if summary:
+                summary.inc("timestamps")
 
-    # FFprobe for MP4/MOV
-    if file_path.lower().endswith(('.mp4', '.mov')):
-        if set_ffprobe_date(file_path, selected_date, dry_run=dry_run, verbose=verbose):
-            actions_taken.append("FFprobe")
-            if summary is not None:
-                summary.inc('ffprobe')
-        else:
-            if summary is not None:
-                summary.inc('errors')
+    # EXIF for JPEG/TIFF
+    if set_exif_date(file_path, selected_date, dry_run=dry_run, verbose=verbose):
+        actions.append("EXIF")
+        if summary:
+            summary.inc("exif")
 
-    if summary is not None and actions_taken:
-        summary.inc('updated')
+    # FFprobe creation_time for MP4/MOV
+    if set_ffprobe_date(file_path, selected_date, dry_run=dry_run, verbose=verbose):
+        actions.append("FFprobe")
+        if summary:
+            summary.inc("ffprobe")
+
+    # Sidecars (timestamps only)
+    moved = set_sidecar_timestamps(file_path, selected_date, dry_run=dry_run, verbose=verbose)
+    if moved:
+        actions.append(f"Sidecars×{moved}")
+        if summary:
+            summary.inc("sidecars", moved)
+
+    if summary and actions:
+        summary.inc("updated")
 
     logging.info(
         "Updated (%s): %s (%s: %s)",
-        ', '.join(actions_taken) if actions_taken else "Nothing",
-        os.path.basename(file_path),
+        ", ".join(actions) if actions else "Nothing",
+        name,
         date_source,
-        selected_date.strftime('%Y-%m-%d %H:%M:%S'),
-        extra={'target': os.path.basename(file_path)},
+        selected_date.strftime("%Y-%m-%d %H:%M:%S"),
+        extra={"target": name},
     )
 
 
@@ -197,133 +260,124 @@ def set_selected_date(file_path, selected_date_info, current_dates, *, force=Fal
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sets the creation and modification timestamps for media files using the best available date from metadata, sidecar, or filename. Supports dry run and force mode.",
+        description=(
+            "Set file timestamps (and embedded metadata where possible) from detected dates "
+            "(EXIF for images, ffprobe for videos, filesystem times as fallback). "
+            "Also updates timestamps on matching sidecar files."
+        ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+
     add_target_args(
         parser,
-        folder_help="Batch mode: set dates on all media inside this folder",
-        single_help="Single mode: set date only on this file",
+        folder_help="Batch mode: set dates on media inside this folder (non-recursive by default; use --recursive to include subfolders).",
+        single_help="Single mode: set date on exactly this file.",
         required=True,
     )
-    parser.add_argument('--force', action='store_true', help='Force overwrite of all timestamps regardless of age')
-    parser.add_argument('--dry-run', action='store_true', help='Preview changes without modifying files')
-    parser.add_argument('--mode', type=str, default='default', choices=[
-        'default', 'oldest', 'newest', 'exif', 'ffprobe', 'sidecar', 'filename', 'folder', 'metadata'
-    ], help='Date selection strategy to use.')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+
+    parser.add_argument("--force", action="store_true", help="Force overwriting even if current timestamps match")
+    parser.add_argument("--dry-run", action="store_true", help="Show what would change without modifying files")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="default",
+        choices=["default", "oldest", "newest"],
+        help="Date selection: 'default' prefers EXIF/ffprobe, otherwise file times; 'oldest'/'newest' pick extremes.",
+    )
+
     args = parser.parse_args()
+    configure_logging(getattr(args, "verbose", False))
 
-    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
-
-    mode_sel, target = resolve_target(args, single_expect='file', folder_expect='folder')
+    # Resolve target: single expects a FILE; batch expects a FOLDER
+    mode_sel, target = resolve_target(args, single_expect="file", folder_expect="folder")
 
     s = RunSummary()
-    s.set('mode', args.mode)
-    s.set('dry_run', bool(args.dry_run))
-    s.set('force', bool(args.force))
+    s.set("mode", args.mode)
+    s.set("dry_run", bool(getattr(args, "dry_run", False)))
+    s.set("force", bool(getattr(args, "force", False)))
+    s.set("recursive", bool(getattr(args, "recursive", False)))
+    s.set("include_hidden", bool(getattr(args, "include_hidden", False)))
+    s.set("earliest_date", None)
+    s.set("latest_date", None)
 
-    if args.verbose:
-        logging.debug("Processing target %s in %s mode", target, mode_sel, extra={'target': os.path.basename(target)})
-
-    if mode_sel == 'single':
-        # operate on exactly one file
-        if not (os.path.isfile(target) and os.path.splitext(target)[1].lower() in MEDIA_EXTENSIONS):
-            logging.info("Not a supported media file. Skipping.", extra={'target': os.path.basename(target)})
-        else:
-            current_dates = get_dates_from_file(target)
-            selected_date_info = select_date(current_dates, args.mode)
+    if mode_sel == "single":
+        # Single file
+        if getattr(args, "verbose", False):
+            logging.debug("Analyzing file: %s", target, extra={"target": os.path.basename(target)})
+        candidates = get_dates_from_file(target)
+        if getattr(args, "verbose", False):
+            logging.debug("Detected dates for %s: %s", os.path.basename(target), candidates, extra={"target": os.path.basename(target)})
+        chosen = select_date(candidates, args.mode)
+        set_selected_date(
+            target,
+            chosen,
+            candidates,
+            force=bool(args.force),
+            dry_run=bool(args.dry_run),
+            verbose=getattr(args, "verbose", False),
+            summary=s,
+        )
+    else:
+        # Batch over files in folder (non-recursive by default)
+        for file_path in iter_files(
+            target,
+            recursive=bool(getattr(args, "recursive", False)),
+            include_hidden=bool(getattr(args, "include_hidden", False)),
+            ext_filter=set(MEDIA_EXTENSIONS),
+        ):
+            name = os.path.basename(file_path)
+            if getattr(args, "verbose", False):
+                logging.debug("Analyzing file: %s", file_path, extra={"target": name})
+            candidates = get_dates_from_file(file_path)
+            if getattr(args, "verbose", False):
+                logging.debug("Detected dates for %s: %s", name, candidates, extra={"target": name})
+            chosen = select_date(candidates, args.mode)
             set_selected_date(
-                target,
-                selected_date_info,
-                current_dates,
-                force=args.force,
-                dry_run=args.dry_run,
-                verbose=args.verbose,
+                file_path,
+                chosen,
+                candidates,
+                force=bool(args.force),
+                dry_run=bool(args.dry_run),
+                verbose=getattr(args, "verbose", False),
                 summary=s,
             )
-    else:
-        # batch over all media files in the folder (non-recursive, preserving prior behavior)
-        for name in os.listdir(target):
-            file_path = os.path.join(target, name)
-            if os.path.isfile(file_path) and os.path.splitext(name)[1].lower() in MEDIA_EXTENSIONS:
-                if args.verbose:
-                    logging.debug("Analyzing file: %s", file_path, extra={'target': name})
-                current_dates = get_dates_from_file(file_path)
-                if args.verbose:
-                    logging.debug("Detected dates for %s: %s", name, current_dates, extra={'target': name})
-                selected_date_info = select_date(current_dates, args.mode)
-                set_selected_date(
-                    file_path,
-                    selected_date_info,
-                    current_dates,
-                    force=args.force,
-                    dry_run=args.dry_run,
-                    verbose=args.verbose,
-                    summary=s,
-                )
-            elif args.verbose:
-                logging.debug("Skipping non-media file: %s", file_path, extra={'target': name})
 
-    # End-of-run summary
-    processed = s['processed'] or 0
-    updated = s['updated'] or 0
-    no_date = s['no_date'] or 0
+    # Summary
+    processed = s.get("processed", 0) or 0
+    updated = s.get("updated", 0) or 0
+    no_date = s.get("no_date", 0) or 0
+    timestamps = s.get("timestamps", 0) or 0
+    exif = s.get("exif", 0) or 0
+    sidecars = s.get("sidecars", 0) or 0
+    ffprobe = s.get("ffprobe", 0) or 0
+    earliest = s.get("earliest_date")
+    latest = s.get("latest_date")
 
-    timestamps = s['timestamps'] or 0
-    exif = s['exif'] or 0
-    sidecars = s['sidecars'] or 0
-    ffprobe = s['ffprobe'] or 0
-
-    earliest = s['earliest_date']
-    latest = s['latest_date']
-
-    line1 = (
-        f"Processed {processed} files — {updated} updated, {no_date} had no selected date. "
-        f"Mode: {s['mode']}. Dry-run: {'yes' if s['dry_run'] else 'no'}. Force: {'yes' if s['force'] else 'no'}. "
-        f"Duration {s.duration_hms}."
-    )
+    line1 = f"Processed {processed} file(s): {updated} updated, {no_date} without a usable date."
     line2 = f"Applied updates — Timestamps {timestamps}, EXIF {exif}, Sidecars {sidecars}, FFprobe {ffprobe}."
-
-    date_line = None
-    if earliest and latest:
-        try:
-            date_line = (
-                "Date range applied: "
-                + earliest.strftime('%Y-%m-%d %H:%M:%S')
-                + " → "
-                + latest.strftime('%Y-%m-%d %H:%M:%S')
-                + "."
-            )
-        except Exception:
-            pass
-
-    lines = [line1, line2]
-    if date_line:
-        lines.append(date_line)
+    line3 = f"Date range — earliest: {earliest}, latest: {latest}."
 
     s.emit_lines(
-        lines,
+        [line1, line2, line3],
         json_extra={
-            'processed': processed,
-            'updated': updated,
-            'no_date': no_date,
-            'timestamps': timestamps,
-            'exif': exif,
-            'sidecars': sidecars,
-            'ffprobe': ffprobe,
-            'earliest_date': str(earliest) if earliest else None,
-            'latest_date': str(latest) if latest else None,
-            'mode': s['mode'],
-            'dry_run': s['dry_run'],
-            'force': s['force'],
-            'target_mode': mode_sel,
+            "processed": processed,
+            "updated": updated,
+            "no_date": no_date,
+            "timestamps": timestamps,
+            "exif": exif,
+            "sidecars": sidecars,
+            "ffprobe": ffprobe,
+            "earliest_date": str(earliest) if earliest else None,
+            "latest_date": str(latest) if latest else None,
+            "mode": s["mode"],
+            "dry_run": s["dry_run"],
+            "force": s["force"],
+            "recursive": s["recursive"],
+            "include_hidden": s["include_hidden"],
+            "target_mode": mode_sel,
+            "target": target,
         },
     )
-
-    if args.verbose:
-        logging.debug("Finished processing %s", target, extra={'target': os.path.basename(target)})
 
 
 if __name__ == "__main__":

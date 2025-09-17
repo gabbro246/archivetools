@@ -1,211 +1,335 @@
 import os
+import sys
 import argparse
 import logging
 import subprocess
-from PIL import Image
+
+from PIL import Image, UnidentifiedImageError
+
+# Try to enable HEIF/HEIC support if available
+_HEIF_SUPPORTED = False
+try:
+    import pillow_heif  # type: ignore
+
+    pillow_heif.register_heif_opener()
+    _HEIF_SUPPORTED = True
+except Exception:
+    _HEIF_SUPPORTED = False
 
 from archivetools import (
-    __version__,
-    MEDIA_EXTENSIONS,
-    RunSummary,
+    configure_logging,
     add_target_args,
     resolve_target,
+    iter_files,
+    MEDIA_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    RunSummary,
 )
 
-# -----------------------------
-# low-level checks
-# -----------------------------
+# ------------------------------------------------------------
+# Checking helpers
+# ------------------------------------------------------------
 
-def check_image_file(path):
-    try:
-        with Image.open(path) as img:
-            img.verify()  # does not decode full image, but catches many corruptions
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-
-
-def check_video_file(path):
+def check_image_file(path: str, *, strict: bool = True) -> tuple[bool, str]:
     """
-    Use ffprobe to read duration (as a simple "is this decodable" check).
+    Return (ok, reason). reason is 'ok', 'unsupported', or error message.
+    If strict=True, we attempt to fully load after verify to catch truncated data.
     """
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".heic", ".heif") and not _HEIF_SUPPORTED:
+        return False, "unsupported"
+
     try:
-        result = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                path,
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return False, result.stderr.strip() or "ffprobe non-zero exit"
-        if not result.stdout.strip():
-            return False, "ffprobe could not read duration (possible corruption)"
-        return True, ""
-    except subprocess.TimeoutExpired:
-        return False, "ffprobe timeout"
+        with Image.open(path) as im:
+            im.verify()  # quick structural check
+        if strict:
+            # reopen to ensure data can be read (verify invalidates the parser)
+            with Image.open(path) as im2:
+                _ = im2.size  # force read headers
+                im2.load()    # read the whole file
+        return True, "ok"
+    except UnidentifiedImageError:
+        return False, "unidentified"
+    except (OSError, ValueError) as e:
+        # OSError includes truncated files, decoder errors, etc.
+        return False, f"image-error:{e.__class__.__name__}"
     except Exception as e:
-        return False, str(e)
+        return False, f"exception:{e.__class__.__name__}"
 
 
-# -----------------------------
-# batch (folder) mode
-# -----------------------------
-
-def check_media_files(folder, verbose=False, summary=None):
-    s = summary
-    for root, _, files in os.walk(folder):
-        all_ok = True
-        if files:
-            if s: s.inc("folders_scanned")
-        corrupt_files = []
-
-        for name in files:
-            ext = os.path.splitext(name)[1].lower()
-            file_path = os.path.join(root, name)
-
-            if ext not in MEDIA_EXTENSIONS:
-                continue
-
-            if s: s.inc("scanned")
-
-            # choose checker
-            if ext in ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.gif', '.webp', '.heic', '.heif', '.raw', '.dng', '.cr2', '.arw', '.orf', '.rw2', '.ico']:
-                ok, msg = check_image_file(file_path)
-            elif ext in ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.3gp', '.mpeg', '.mpg', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.asf', '.m2ts', '.webm']:
-                ok, msg = check_video_file(file_path)
-            else:
-                # generic quick read for anything else still considered media by your set
-                try:
-                    with open(file_path, "rb") as f:
-                        f.read(512)
-                    ok, msg = True, ""
-                except Exception as e:
-                    ok, msg = False, str(e)
-
-            if not ok:
-                all_ok = False
-                corrupt_files.append((name, msg))
-                logging.error(f"Corruption detected: {msg}", extra={'target': name})
-                if s:
-                    s.inc('corrupt')
-                    if 'timeout' in msg.lower():
-                        s.inc('timeouts')
-                    if len(getattr(s, 'notes', [])) < 3:
-                        s.note(f"{name}: {msg}")
-            else:
-                if s: s.inc('ok')
-                if verbose:
-                    logging.info("File OK.", extra={'target': name})
-
-        if not files:
-            continue
-
-        if all_ok and not verbose:
-            logging.info("All media files OK.", extra={'target': os.path.relpath(root, folder)})
+def _run_ffprobe_duration(path: str) -> tuple[bool, float | None, str]:
+    """
+    Try to extract duration (seconds) using ffprobe.
+    Returns (ran, duration, stderr_excerpt).
+    - ran=False indicates ffprobe not available or execution failure without result.
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1:nk=1",
+        path,
+    ]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, encoding="utf-8").strip()
+        if not out:
+            return True, None, ""
+        try:
+            dur = float(out.splitlines()[0])
+            return True, dur, ""
+        except Exception:
+            return True, None, out[:200]
+    except FileNotFoundError:
+        return False, None, "ffprobe-not-found"
+    except subprocess.CalledProcessError as e:
+        # ffprobe ran but file likely invalid/unreadable
+        return True, None, (e.output or "")[:200]
+    except Exception as e:
+        return False, None, f"exception:{e.__class__.__name__}"
 
 
-# -----------------------------
-# single (file) mode
-# -----------------------------
+def check_video_file(path: str, *, min_duration: float | None = 0.0) -> tuple[bool, str]:
+    """
+    Return (ok, reason). ok=True if ffprobe runs and returns a numeric duration
+    (and, if min_duration is set, duration >= min_duration).
+    """
+    ran, duration, info = _run_ffprobe_duration(path)
+    if not ran:
+        return False, info or "ffprobe-failed"
+    if duration is None:
+        return False, "no-duration"
+    if min_duration is not None and duration < float(min_duration):
+        return False, f"short:{duration:.3f}"
+    return True, "ok"
 
-def check_single_file(file_path, verbose=False, summary=None):
-    s = summary
-    name = os.path.basename(file_path)
-    if not os.path.isfile(file_path):
-        logging.error("The specified path is not a file.", extra={'target': name})
-        if s: s.inc('errors')
-        return
 
+# ------------------------------------------------------------
+# Processing
+# ------------------------------------------------------------
+
+def _handle_one_file(path: str, *, check_images: bool, check_videos: bool, min_video_duration: float | None,
+                     verbose: bool, summary: RunSummary | None) -> None:
+    name = os.path.basename(path)
     ext = os.path.splitext(name)[1].lower()
 
-    if ext not in MEDIA_EXTENSIONS:
-        logging.info("Not a supported media file. Skipping.", extra={'target': name})
+    if ext in IMAGE_EXTENSIONS and check_images:
+        ok, reason = check_image_file(path, strict=True)
+        if ok:
+            if summary: summary.inc("images_ok")
+            if verbose: logging.debug("Image OK", extra={"target": name})
+        else:
+            # treat unsupported HEIF as skipped, not corrupt
+            if reason == "unsupported":
+                logging.warning("Skipped (HEIF/HEIC unsupported)", extra={"target": name})
+                if summary: summary.inc("images_unsupported")
+            else:
+                logging.error("Corrupted image (%s)", reason, extra={"target": name})
+                if summary:
+                    summary.inc("images_corrupt")
+                    summary.inc("corrupt_total")
+        if summary: summary.inc("images_checked")
         return
 
-    if s: s.inc('scanned')
+    if ext in VIDEO_EXTENSIONS and check_videos:
+        ok, reason = check_video_file(path, min_duration=min_video_duration)
+        if ok:
+            if summary: summary.inc("videos_ok")
+            if verbose: logging.debug("Video OK", extra={"target": name})
+        else:
+            if reason == "ffprobe-not-found":
+                logging.warning("Skipped (ffprobe not found)", extra={"target": name})
+                if summary: summary.inc("videos_ffprobe_missing")
+            else:
+                logging.error("Corrupted video (%s)", reason, extra={"target": name})
+                if summary:
+                    summary.inc("videos_corrupt")
+                    summary.inc("corrupt_total")
+        if summary: summary.inc("videos_checked")
+        return
 
-    if ext in ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.bmp', '.gif', '.webp', '.heic', '.heif', '.raw', '.dng', '.cr2', '.arw', '.orf', '.rw2', '.ico']:
-        ok, msg = check_image_file(file_path)
-    elif ext in ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.3gp', '.mpeg', '.mpg', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.asf', '.m2ts', '.webm']:
-        ok, msg = check_video_file(file_path)
+    # Non-media or filtered out by type
+    if summary: summary.inc("skipped_nonmedia")
+    if verbose:
+        logging.debug("Skipping non-target file", extra={"target": name})
+
+
+def _batch_mode(root: str, *, recursive: bool, include_hidden: bool, check_images: bool, check_videos: bool,
+                min_video_duration: float | None, verbose: bool, summary: RunSummary | None) -> None:
+    # Determine filter set
+    if check_images and check_videos:
+        ext_filter = set(MEDIA_EXTENSIONS)
+    elif check_images:
+        ext_filter = set(IMAGE_EXTENSIONS)
+    elif check_videos:
+        ext_filter = set(VIDEO_EXTENSIONS)
     else:
-        try:
-            with open(file_path, "rb") as f:
-                f.read(512)
-            ok, msg = True, ""
-        except Exception as e:
-            ok, msg = False, str(e)
+        ext_filter = set(MEDIA_EXTENSIONS)
 
-    if ok:
-        if s: s.inc('ok')
-        logging.info("File OK.", extra={'target': name})
-    else:
-        if s: s.inc('corrupt')
-        if 'timeout' in msg.lower() and s: s.inc('timeouts')
-        logging.error(f"Corruption detected: {msg}", extra={'target': name})
-        if s and len(getattr(s, 'notes', [])) < 3:
-            s.note(f"{name}: {msg}")
+    paths = list(
+        iter_files(
+            root,
+            recursive=recursive,
+            include_hidden=include_hidden,
+            ext_filter=ext_filter,
+        )
+    )
+    if summary:
+        summary.set("files_seen", len(paths))
+    for p in paths:
+        _handle_one_file(
+            p,
+            check_images=check_images,
+            check_videos=check_videos,
+            min_video_duration=min_video_duration,
+            verbose=verbose,
+            summary=summary,
+        )
 
 
-# -----------------------------
+def _single_mode(path: str, *, check_images: bool, check_videos: bool, min_video_duration: float | None,
+                 verbose: bool, summary: RunSummary | None) -> None:
+    _handle_one_file(
+        path,
+        check_images=check_images,
+        check_videos=check_videos,
+        min_video_duration=min_video_duration,
+        verbose=verbose,
+        summary=summary,
+    )
+
+
+# ------------------------------------------------------------
 # CLI
-# -----------------------------
+# ------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Checks media files for basic corruption. Use -f/--folder to scan a folder tree, or -s/--single to check one file.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description=(
+            "Scan media files for corruption. Images are verified with Pillow; videos are probed with ffprobe. "
+            "Non-recursive by default — use --recursive to include subfolders."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+
     add_target_args(
         parser,
-        folder_help="Batch mode: scan all media in this folder (recursively)",
-        single_help="Single mode: check exactly this file",
+        folder_help="Batch mode: check media in this folder (non-recursive by default; use --recursive to include subfolders).",
+        single_help="Single mode: check exactly this file.",
         required=True,
     )
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+
+    typ = parser.add_mutually_exclusive_group()
+    typ.add_argument("--images-only", action="store_true", help="Only check images")
+    typ.add_argument("--videos-only", action="store_true", help="Only check videos")
+
+    parser.add_argument(
+        "--min-video-duration",
+        type=float,
+        default=0.0,
+        help="Treat videos shorter than this many seconds as corrupt (0 disables the check).",
+    )
+    parser.add_argument(
+        "--zero-exit",
+        action="store_true",
+        help="Always exit with code 0 even if corrupted files are found.",
+    )
+
     args = parser.parse_args()
+    configure_logging(getattr(args, "verbose", False))
 
-    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
+    # Resolve target: single expects file; batch expects folder
+    mode_sel, target = resolve_target(args, single_expect="file", folder_expect="folder")
 
-    # -s expects a FILE, -f expects a FOLDER
-    mode_sel, target = resolve_target(args, single_expect='file', folder_expect='folder')
+    check_images = not args.videos_only
+    check_videos = not args.images_only
+    min_video_duration = None if (args.min_video_duration or 0) <= 0 else float(args.min_video_duration)
 
-    # summary tracker
     s = RunSummary()
+    s.set("recursive", bool(getattr(args, "recursive", False)))
+    s.set("include_hidden", bool(getattr(args, "include_hidden", False)))
+    s.set("check_images", check_images)
+    s.set("check_videos", check_videos)
+    s.set("heif_supported", _HEIF_SUPPORTED)
 
-    if mode_sel == 'single':
-        check_single_file(target, verbose=args.verbose, summary=s)
+    if mode_sel == "single":
+        _single_mode(
+            target,
+            check_images=check_images,
+            check_videos=check_videos,
+            min_video_duration=min_video_duration,
+            verbose=getattr(args, "verbose", False),
+            summary=s,
+        )
     else:
-        check_media_files(target, verbose=args.verbose, summary=s)
+        _batch_mode(
+            target,
+            recursive=bool(getattr(args, "recursive", False)),
+            include_hidden=bool(getattr(args, "include_hidden", False)),
+            check_images=check_images,
+            check_videos=check_videos,
+            min_video_duration=min_video_duration,
+            verbose=getattr(args, "verbose", False),
+            summary=s,
+        )
 
-    # Emit end-of-run summary
-    scanned = s['scanned'] or 0
-    ok = s['ok'] or 0
-    corrupt = s['corrupt'] or 0
-    timeouts = s['timeouts'] or 0
+    # Summary
+    images_checked = s.get("images_checked", 0)
+    videos_checked = s.get("videos_checked", 0)
+    images_ok = s.get("images_ok", 0)
+    videos_ok = s.get("videos_ok", 0)
+    images_corrupt = s.get("images_corrupt", 0)
+    videos_corrupt = s.get("videos_corrupt", 0)
+    images_unsupported = s.get("images_unsupported", 0)
+    videos_ffprobe_missing = s.get("videos_ffprobe_missing", 0)
+    corrupt_total = s.get("corrupt_total", 0)
+    files_seen = s.get("files_seen", 0)
 
-    pct = (100.0 * corrupt / scanned) if scanned else 0.0
-    line1 = f"Scanned {scanned} media files in {s.duration_hms} — {ok} OK, {corrupt} corrupt ({pct:.2f}%)."
-    line2 = f"Timeouts: {timeouts}." if timeouts else None
+    line1 = (
+        f"Checked {files_seen or (images_checked + videos_checked)} file(s): "
+        f"{images_checked} images, {videos_checked} videos."
+    )
+    line2 = (
+        f"OK — images {images_ok}, videos {videos_ok}. "
+        f"Corrupt — images {images_corrupt}, videos {videos_corrupt}."
+    )
+    notes = []
+    if images_unsupported:
+        notes.append(f"{images_unsupported} HEIF/HEIC skipped (no decoder)")
+    if videos_ffprobe_missing:
+        notes.append("ffprobe not found (videos skipped)")
+    line3 = "Notes: " + "; ".join(notes) if notes else "Notes: none."
 
-    examples = getattr(s, 'notes', [])[:3]
-    line3 = ("Examples: " + "; ".join(examples)) if corrupt and examples else None
+    s.emit_lines(
+        [line1, line2, line3],
+        json_extra={
+            "files_seen": files_seen,
+            "images_checked": images_checked,
+            "images_ok": images_ok,
+            "images_corrupt": images_corrupt,
+            "images_unsupported": images_unsupported,
+            "videos_checked": videos_checked,
+            "videos_ok": videos_ok,
+            "videos_corrupt": videos_corrupt,
+            "videos_ffprobe_missing": videos_ffprobe_missing,
+            "corrupt_total": corrupt_total,
+            "recursive": s["recursive"],
+            "include_hidden": s["include_hidden"],
+            "check_images": s["check_images"],
+            "check_videos": s["check_videos"],
+            "heif_supported": s["heif_supported"],
+            "target_mode": mode_sel,
+            "target": target,
+        },
+    )
 
-    lines = [line1]
-    if line2: lines.append(line2)
-    if line3: lines.append(line3)
-
-    s.emit_lines(lines, json_extra={
-        'target_mode': mode_sel,
-        'scanned': scanned, 'ok': ok, 'corrupt': corrupt, 'timeouts': timeouts
-    })
+    if corrupt_total and not args.zero_exit:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,8 @@ setup(
         "console_scripts": [
             "checkmediacorruption=archivetools.checkmediacorruption:main",
             "cleanup=archivetools.cleanup:main",
-            "convertfolderstozips=archivetools.convertfolderstozips:main",
-            "convertzipstofolders=archivetools.convertzipstofolders:main",
+            "converttozip=archivetools.converttozip:main",
+            "converttofolder=archivetools.converttofolder:main",
             "deleteduplicates=archivetools.deleteduplicates:main",
             "flattenfolder=archivetools.flattenfolder:main",
             "organizebydate=archivetools.organizebydate:main",
