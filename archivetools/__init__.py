@@ -1,613 +1,430 @@
 from .__version__ import __version__
 
 import os
-import sys
-import json
-import datetime as _dt
+import datetime
+from PIL import Image, ExifTags
 import logging
+from colorama import Fore, Style, init
 import hashlib
 import subprocess
-import argparse
-from pathlib import Path
-
-from PIL import Image, ExifTags  # type: ignore
-from pillow_heif import register_heif_opener  # type: ignore
-from colorama import Fore, Style, init as _colorama_init  # type: ignore
+import re
 import getpass
 
-_colorama_init(autoreset=True)
-
-register_heif_opener()
-_HEIF_SUPPORTED = True
-
-
-# =============================================================================
-# Logging (colored)
-# =============================================================================
-
-_LEVEL_TO_COLOR = {
-    logging.DEBUG: Style.DIM,
-    logging.INFO: Fore.GREEN,
-    logging.WARNING: Fore.YELLOW + Style.BRIGHT,
-    logging.ERROR: Fore.RED + Style.BRIGHT,
-    logging.CRITICAL: Fore.RED + Style.BRIGHT,
-}
-
-class _ColoredFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        record.__dict__.setdefault("target", "")
-        color = _LEVEL_TO_COLOR.get(record.levelno, Style.NORMAL)
-        # Temporarily replace the levelname for colorization
-        original_levelname = record.levelname
-        try:
-            record.levelname = f"{color}{original_levelname}{Style.RESET_ALL}"
-            return super().format(record)
-        finally:
-            record.levelname = original_levelname
-
-
-def configure_logging(verbose: bool = False) -> None:
-    """
-    Configure a colored root logger. Safe to call multiple times.
-    Ensures ALL StreamHandlers get a colored formatter (even if they were added earlier).
-    """
-    root = logging.getLogger()
-    level = logging.DEBUG if verbose else logging.INFO
-    root.setLevel(level)
-
-    # If there is no stream handler yet, add one.
-    has_stream = any(isinstance(h, logging.StreamHandler) for h in root.handlers)
-    if not has_stream:
-        handler = logging.StreamHandler()
-        handler.setFormatter(_ColoredFormatter("%(levelname)s:\t%(target)s\t%(message)s"))
-        root.addHandler(handler)
-
-    # Update ALL stream handlers to colored format and level
-    for h in root.handlers:
-        try:
-            if isinstance(h, logging.StreamHandler):
-                h.setLevel(level)
-                # If it's not already a _ColoredFormatter, swap it so INFO gets color too.
-                if not isinstance(getattr(h, "formatter", None), _ColoredFormatter):
-                    h.setFormatter(_ColoredFormatter("%(levelname)s:\t%(target)s\t%(message)s"))
-        except Exception:
-            # be resilient; never hard-crash logging config
-            pass
 
 
 
-# Configure once with default INFO; individual scripts can call configure_logging()
-configure_logging(verbose=False)
 
-# =============================================================================
-# Constants
-# =============================================================================
+# ========================================
+# logs with color
+# ========================================
+init(autoreset=True)
+class ColoredFormatter(logging.Formatter):
+    COLORS = {
+        'DEBUG': Fore.CYAN,
+        'INFO': Fore.GREEN,
+        'WARNING': Fore.YELLOW,
+        'ERROR': Fore.RED,
+        'CRITICAL': Fore.MAGENTA
+    }
 
-# Sidecar extensions that commonly accompany media files
-SIDECAR_EXTENSIONS = [
-    ".aae", ".xmp", ".json", ".txt",
-    ".srt", ".sub", ".idx", ".vtt", ".lrc",
-    ".md", ".log", ".nfo", ".mta",
-    ".thm",
-]
+    def format(self, record):
+        if not hasattr(record, 'target'):
+            record.target = '-'  # Default value if 'target' is not provided
+        log_color = self.COLORS.get(record.levelname, '')
+        log_format = (
+            f"{log_color}[%(levelname)s]\t%(target)s:\t%(message)s{Style.RESET_ALL}"
+        )
+        formatter = logging.Formatter(log_format)
+        return formatter.format(record)
+handler = logging.StreamHandler()
+handler.setFormatter(ColoredFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-# Image & video extensions
-IMAGE_EXTENSIONS = [
-    ".jpg", ".jpeg", ".jpe",
-    ".png",
-    ".tif", ".tiff",
-    ".bmp",
-    ".gif",
-    ".webp",
-    ".heic", ".heif",
-    ".dng", ".nef", ".cr2", ".cr3", ".arw", ".orf", ".rw2", ".raf",
-    ".ico", ".eps",
-]
 
-VIDEO_EXTENSIONS = [
-    ".mp4", ".m4v", ".mov",
-    ".mkv",
-    ".avi",
-    ".wmv",
-    ".flv",
-    ".webm",
-    ".mts", ".m2ts", ".ts",
-    ".3gp", ".3g2",
-    ".mxf",
-    ".ogv",
-    ".rm",
-    ".divx",
-    ".asf",
-    ".f4v",
-]
 
-OTHER_EXTENSIONS = [".gpx", ".kmz", ".kml"]
 
-MEDIA_EXTENSIONS = sorted(set(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS))
-
-JUNK_FILENAMES = [
-    "desktop.ini", ".DS_Store", "Thumbs.db",
-    ".Spotlight-V100", ".Trashes", "__MACOSX",
-]
-
+# ========================================
+# definitions
+# ========================================
+SIDECAR_EXTENSIONS = ['.aae', '.xmp', '.json', '.txt', '.srt', '.xml', '.csv', '.ini', '.yaml', '.yml', '.md', '.log', '.nfo', '.sub', '.idx', '.mta', '.vtt', '.lrc']
+IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.tiff', '.tif', '.psd', '.heic', '.nef', '.gif', '.bmp', '.dng', '.raw', '.svg', '.webp', '.cr2', '.arw', '.orf', '.rw2', '.ico', '.eps', '.ai', '.indd']
+VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.webm', '.3gp', '.mpeg', '.mpg', '.m4v', '.mts', '.ts', '.vob', '.mxf', '.ogv', '.rm', '.divx', '.asf', '.f4v', '.m2ts', '.nev']
+OTHER_EXTENSIONS = ['.gpx', '.kmz', '.kml']
+JUNK_FILENAMES = ["desktop.ini", ".DS_Store", "Thumbs.db", ".Spotlight-V100", ".Trashes", "__MACOSX"]
 JUNK_PREFIXES = ["._"]
-
-MONTH_NAMES = {
-    1: "Jänner",     2: "Februar",  3: "März",      4: "April",
-    5: "Mai",        6: "Juni",     7: "Juli",      8: "August",
-    9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
-}
+MEDIA_EXTENSIONS = list(set(IMAGE_EXTENSIONS + VIDEO_EXTENSIONS + OTHER_EXTENSIONS))
+MONTH_NAMES = {1: 'Januar', 2: 'Februar', 3: 'März', 4: 'April', 5: 'Mai', 6: 'Juni', 7: 'Juli', 8: 'August', 9: 'September', 10: 'Oktober', 11: 'November', 12: 'Dezember'}
 WEEK_PREFIX = "KW"
 
-# =============================================================================
-# CLI helpers
-# =============================================================================
-
-def add_target_args(
-    parser,
-    *,
-    folder_help: str = "Batch mode: operate on the contents of this folder (non-recursive by default).",
-    single_help: str = "Single mode: operate on exactly this file/folder.",
-    required: bool = False,
-    include_recursive_flag: bool = True,
-    include_hidden_flag: bool = True,
-    include_version_flag: bool = True,
-    include_verbose_flag: bool = True,
-):
-    """
-    Adds a consistent set of common CLI arguments:
-      - Mutually exclusive target: -s/--single <path>  OR  -b/--batch <folder>
-      - --recursive (opt-in; default is non-recursive)
-      - --include-hidden (off by default)
-      - --version and --verbose (optional)
-    """
-    if include_version_flag:
-        parser.add_argument(
-            "-v", "--version", action="version", version=__version__,
-            help="Show version and exit."
-        )
-
-    if include_verbose_flag:
-        parser.add_argument(
-            "--verbose", action="store_true", dest="verbose",
-            help="Enable verbose (DEBUG) logging."
-        )
-
-    group = parser.add_mutually_exclusive_group(required=required)
-    group.add_argument(
-        "-s", "--single", dest="single", metavar="PATH",
-        help=single_help,
-    )
-    # New name: -b/--batch replaces -f/--folder (keep hidden alias)
-    group.add_argument(
-        "-b", "--batch", dest="batch", metavar="FOLDER",
-        help=folder_help,
-    )
-    # Legacy alias (hidden) for compatibility
-    parser.add_argument(
-        "-f", "--folder", dest="batch", metavar="FOLDER",
-        help=argparse.SUPPRESS
-    )
-
-    if include_recursive_flag:
-        parser.add_argument(
-            "--recursive", action="store_true", default=False,
-            help="Include subfolders (default is non-recursive)."
-        )
-
-    if include_hidden_flag:
-        parser.add_argument(
-            "--include-hidden", action="store_true", default=False,
-            help="Also process hidden files and folders (ignored by default)."
-        )
-
-    return parser
 
 
-def _exists_and_type(path: str, expect: str) -> bool:
-    if expect == "file":
-        return os.path.isfile(path)
-    if expect == "folder":
-        return os.path.isdir(path)
-    if expect == "zip":
-        return os.path.isfile(path) and path.lower().endswith(".zip")
-    return os.path.exists(path)
 
 
-def validate_path(path: str, expect: str = "file") -> str:
-    """
-    Return absolute normalized path if it exists and matches expectation.
-    Valid expectations: 'file', 'folder', 'zip', 'any'
-    """
-    norm = os.path.abspath(os.path.expanduser(path))
-    if not _exists_and_type(norm, expect if expect in {"file", "folder", "zip"} else "any"):
-        raise argparse.ArgumentTypeError(f"Path is not a valid {expect}: {path}")
-    return norm
+# ========================================
+# ========================================
+def prompt_password(confirm=True):
+    """Prompt the user for a password (hidden input). Confirm if needed."""
+    password = getpass.getpass("Enter password: ")
+    if confirm:
+        password_confirm = getpass.getpass("Confirm password: ")
+        if password != password_confirm:
+            raise ValueError("Passwords do not match.")
+    return password
 
 
-def resolve_target(args, *, single_expect: str, folder_expect: str = "folder"):
-    """
-    Convenience to resolve the chosen target and mode from argparse results.
-
-    Returns: (mode, path)
-      mode = 'single' if args.single was provided, else 'folder'
-      path = normalized absolute path (validated per expectation)
-    """
-    if getattr(args, "single", None):
-        return "single", validate_path(args.single, single_expect)
-
-    batch_path = getattr(args, "batch", None) or getattr(args, "folder", None)
-    return "folder", validate_path(batch_path, folder_expect)
-
-# =============================================================================
-# File system helpers
-# =============================================================================
-
-def is_hidden(path: str) -> bool:
-    """
-    Determine if path is hidden based on any component starting with '.'.
-    (Cross-platform conservative heuristic.)
-    """
-    parts = Path(path).parts
-    return any(p.startswith(".") for p in parts if p not in (".", ".."))
 
 
-def iter_dirs(root: str, *, recursive: bool = False, include_hidden: bool = False, follow_symlinks: bool = False):
-    """
-    Yield directories under root (excluding root). Non-recursive by default.
-    """
-    root = os.path.abspath(root)
-    if not recursive:
-        with os.scandir(root) as it:
-            for e in it:
-                if not e.is_dir(follow_symlinks=follow_symlinks):
-                    continue
-                if not include_hidden and is_hidden(e.path):
-                    continue
-                yield e.path
-        return
 
-    for curr, dirs, _ in os.walk(root, followlinks=follow_symlinks):
-        if curr != root:
-            if include_hidden or not is_hidden(curr):
-                yield curr
-        if not include_hidden:
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
+# ========================================
+# Function to get all available dates from a file and its sidecar
+# ========================================
+def get_dates_from_file(file_path):
+    dates = {}
+    # Get EXIF dates
+    try:
+        with Image.open(file_path) as img:
+            exif_data = img._getexif()
+            if exif_data:
+                for tag, value in exif_data.items():
+                    decoded = ExifTags.TAGS.get(tag, tag)
+                    if decoded in ["DateTime", "DateTimeOriginal", "DateTimeDigitized"]:
+                        dates[decoded] = datetime.datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
+    except Exception:
+        pass
 
+    # Get file creation and modification dates
+    try:
+        stat = os.stat(file_path)
+        dates['Created'] = datetime.datetime.fromtimestamp(stat.st_ctime)
+        dates['Modified'] = datetime.datetime.fromtimestamp(stat.st_mtime)
+    except Exception as e:
+        logging.warning(f"could not get file dates: {e}", extra={'target': os.path.basename(file_path)})
 
-def iter_files(
-    root: str,
-    *,
-    recursive: bool = False,
-    include_hidden: bool = False,
-    ext_filter=None,
-    follow_symlinks: bool = False,
-):
-    """
-    Yield files under root. Non-recursive by default.
+    # Get creation_time from video metadata via ffprobe
+    try:
+        if os.path.splitext(file_path)[1].lower() in VIDEO_EXTENSIONS:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                 "-show_entries", "format_tags=creation_time",
+                 "-of", "default=noprint_wrappers=1:nokey=0", file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            for line in result.stdout.splitlines():
+                if 'creation_time=' in line:
+                    raw_date = line.split('=')[1].strip()
+                    try:
+                        parsed_date = datetime.datetime.fromisoformat(raw_date.replace('Z', '+00:00'))
+                        dates['CreationTime'] = parsed_date
+                    except ValueError:
+                        try:
+                            parsed_date = datetime.datetime.strptime(raw_date, "%Y-%m-%dT%H:%M:%S.%fZ")
+                            dates['FFprobe CreationTime'] = parsed_date
+                        except Exception:
+                            pass
+    except Exception as e:
+        logging.warning(f"ffprobe failed: {e}", extra={'target': os.path.basename(file_path)})
 
-    ext_filter: None (all) or a container of lowercase extensions (e.g., {'.jpg', '.mp4'})
-    """
-    root = os.path.abspath(root)
-    if not recursive:
-        with os.scandir(root) as it:
-            for e in it:
-                if not e.is_file(follow_symlinks=follow_symlinks):
-                    continue
-                if not include_hidden and is_hidden(e.path):
-                    continue
-                if ext_filter:
-                    ext = os.path.splitext(e.name)[1].lower()
-                    if ext not in ext_filter:
-                        continue
-                yield e.path
-        return
+    # Get dates from sidecar files
+    base_path, file_ext = os.path.splitext(file_path)
+    for ext in SIDECAR_EXTENSIONS:
+        for sidecar_path in [f"{base_path}{ext}", f"{base_path}{file_ext}{ext}"]:
+            if os.path.exists(sidecar_path):
+                try:
+                    with open(sidecar_path, 'r') as f:
+                        if ext == '.json':
+                            try:
+                                import json
+                                sidecar_data = json.load(f)
+                                if 'date' in sidecar_data:
+                                    try:
+                                        date_value = sidecar_data['date']
+                                        parsed_date = datetime.datetime.fromisoformat(date_value)
+                                        dates[f"Sidecar ({ext})"] = parsed_date
+                                    except ValueError:
+                                        pass
+                            except Exception as e:
+                                logging.warning(f"could not parse JSON sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
+                        else:
+                            for line in f:
+                                if 'date' in line.lower():
+                                    try:
+                                        potential_date = datetime.datetime.fromisoformat(line.strip())
+                                        dates[f"Sidecar ({ext})"] = potential_date
+                                    except ValueError:
+                                        pass
+                except Exception as e:
+                    logging.warning(f"could not read sidecar file: {e}", extra={'target': os.path.basename(sidecar_path)})
 
-    for curr, dirs, files in os.walk(root, followlinks=follow_symlinks):
-        if not include_hidden:
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-        for name in files:
-            path = os.path.join(curr, name)
-            if not include_hidden and is_hidden(path):
-                continue
-            if ext_filter:
-                ext = os.path.splitext(name)[1].lower()
-                if ext not in ext_filter:
-                    continue
-            yield path
-
-
-def calculate_file_hash(path: str, algo: str = "sha256", chunk_size: int = 1024 * 1024) -> str:
-    """
-    Hash file contents.
-    """
-    h = hashlib.new(algo)
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
+    # Extract date from filename using common patterns
+    filename = os.path.basename(file_path)
+    date_patterns = [
+        (r"(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})", "%Y%m%d%H%M%S"),
+        (r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})", "%Y%m%d%H%M%S"),
+        (r"(\d{4})[._-](\d{2})[._-](\d{2})", "%Y%m%d"),
+        (r"(\d{4})(\d{2})(\d{2})", "%Y%m%d"),
+    ]
+    for pattern, fmt in date_patterns:
+        match = re.search(pattern, filename)
+        if match:
+            try:
+                extracted = ''.join(match.groups())
+                parsed_date = datetime.datetime.strptime(extracted, fmt)
+                dates['Filename'] = parsed_date
                 break
-            h.update(chunk)
-    return h.hexdigest()
+            except ValueError:
+                continue
+
+    # Extract date from parent folder name
+    folder_name = os.path.basename(os.path.dirname(file_path))
+    try:
+        if re.match(r"^\d{8}$", folder_name):
+            parsed_date = datetime.datetime.strptime(folder_name, "%Y%m%d")
+            dates["FolderDate"] = parsed_date
+        elif re.match(r"^\d{4}$", folder_name):
+            parsed_date = datetime.datetime.strptime(folder_name, "%Y")
+            dates["FolderDate"] = parsed_date
+        elif re.match(r"^\d{8}-\d{8}", folder_name):
+            start_str, end_str = folder_name.split("-")[0], folder_name.split("-")[1].split(" ")[0]
+            start_date = datetime.datetime.strptime(start_str, "%Y%m%d")
+            end_date = datetime.datetime.strptime(end_str, "%Y%m%d")
+            dates["FolderDateRangeStart"] = start_date
+            dates["FolderDateRangeEnd"] = end_date
+    except Exception as e:
+        logging.warning(f"Could not extract date from folder name: {e}", extra={'target': folder_name})
+
+    return dates
 
 
-def unique_path(path: str, *, style: str = "paren") -> str:
+
+    
+
+# ========================================
+# ========================================
+def select_date(dates: dict, mode: str = 'default', midnight_shift: int = 0) -> list:
     """
-    Return a unique path by appending a counter.
-
-    style:
-      - 'paren': 'name(1).ext'
-      - 'underscore': 'name_1.ext'
+    Selects a date from the dictionary of found dates based on the selected mode.
+    Returns a list [label, datetime] or None if no valid date was found.
+    Applies a midnight shift if specified, adjusting early morning times to the previous day.
     """
-    base, ext = os.path.splitext(path)
-    counter = 1
-    if style == "underscore":
-        candidate = f"{base}_{counter}{ext}"
-        while os.path.exists(candidate):
-            counter += 1
-            candidate = f"{base}_{counter}{ext}"
-        return candidate
-    candidate = f"{base}({counter}){ext}"
-    while os.path.exists(candidate):
-        counter += 1
-        candidate = f"{base}({counter}){ext}"
-    return candidate
 
+    exif_dates = {k: v for k, v in dates.items() if 'DateTime' in k}
+    sidecar_dates = {k: v for k, v in dates.items() if 'Sidecar' in k}
+    metadata_dates = {k: v for k, v in dates.items() if k in ['Created', 'Modified']}
+    ffprobe_dates = {k: v for k, v in dates.items() if 'CreationTime' in k}
+    filename_dates = {k: v for k, v in dates.items() if k == 'Filename'}
+    folder_dates = {k: v for k, v in dates.items() if k.startswith('FolderDate')}
 
-def is_image_ext(ext: str) -> bool:
-    return ext.lower() in IMAGE_EXTENSIONS
+    def get_oldest(date_dict: dict):
+        if date_dict:
+            return min(date_dict.items(), key=lambda x: x[1])
+        return None
 
+    def get_newest(date_dict: dict):
+        if date_dict:
+            return max(date_dict.items(), key=lambda x: x[1])
+        return None
 
-def is_video_ext(ext: str) -> bool:
-    return ext.lower() in VIDEO_EXTENSIONS
+    selected = None
 
+    if mode == 'default':
+        selected = (
+            get_oldest(ffprobe_dates) or
+            get_oldest(exif_dates) or
+            get_oldest(filename_dates) or
+            get_oldest(folder_dates) or
+            get_oldest(sidecar_dates) or
+            get_oldest(metadata_dates)
+        )
 
-def is_media_ext(ext: str) -> bool:
-    return ext.lower() in MEDIA_EXTENSIONS
+    elif mode == 'oldest':
+        selected = get_oldest(dates)
 
+    elif mode == 'newest':
+        selected = get_newest(dates)
 
-def move_sidecar_files(src_file: str, target_folder: str, *, dry_run: bool = False, verbose: bool = False, sidecar_exts=None) -> int:
+    elif mode == 'exif':
+        result = get_oldest(exif_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No EXIF dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    elif mode == 'ffprobe':
+        result = get_oldest(ffprobe_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No ffprobe CreationTime found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    elif mode == 'sidecar':
+        result = get_oldest(sidecar_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No sidecar dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    elif mode == 'filename':
+        result = get_oldest(filename_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No filename dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    elif mode == 'folder':
+        result = get_oldest(folder_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No folder dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    elif mode == 'metadata':
+        result = get_oldest(metadata_dates)
+        if result:
+            selected = result
+        else:
+            logging.warning("No metadata dates found, falling back to default.")
+            return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    else:
+        logging.error(f"Unknown mode '{mode}' provided. Falling back to default.")
+        return select_date(dates, 'default', midnight_shift=midnight_shift)
+
+    if selected and midnight_shift and selected[1].hour < midnight_shift:
+        selected = (selected[0], selected[1] - datetime.timedelta(days=1))
+
+    return selected
+    
+    
+    
+    
+    
+# ========================================
+# ========================================
+def calculate_file_hash(file_path):
+    """Calculate SHA-256 hash of a file."""
+    hash_sha256 = hashlib.sha256()
+    try:
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_sha256.update(chunk)
+    except PermissionError as e:
+        logging.error(f"Permission error while accessing: {e}", extra={'target': os.path.basename(file_path)})
+        raise
+    return hash_sha256.hexdigest()
+
+# ========================================
+# summary helpers (end-of-run reporting)
+# ========================================
+from collections import defaultdict
+from datetime import timedelta
+
+def human_bytes(num_bytes: int) -> str:
+    """Return human friendly size (e.g., '31.7 GB')."""
+    try:
+        num = float(num_bytes)
+    except Exception:
+        return str(num_bytes)
+    units = ['B','KB','MB','GB','TB','PB']
+    for unit in units:
+        if num < 1024.0 or unit == units[-1]:
+            return f"{num:.1f} {unit}" if unit != 'B' else f"{int(num)} {unit}"
+        num /= 1024.0
+
+def format_duration(seconds: float) -> str:
+    """Return HH:MM:SS for a duration in seconds."""
+    if seconds is None:
+        return "00:00:00"
+    td = timedelta(seconds=int(round(seconds)))
+    total_seconds = int(td.total_seconds())
+    h = total_seconds // 3600
+    m = (total_seconds % 3600) // 60
+    s = total_seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+class RunSummary:
     """
-    Move sidecar files that share the same base name as src_file into target_folder.
-    Returns the count of sidecars moved.
-    """
-    if sidecar_exts is None:
-        sidecar_exts = SIDECAR_EXTENSIONS
-    count = 0
-    folder = os.path.dirname(src_file)
-    base, _ = os.path.splitext(os.path.basename(src_file))
-    for name in os.listdir(folder):
-        nbase, ext = os.path.splitext(name)
-        if nbase != base:
-            continue
-        if ext.lower() not in sidecar_exts:
-            continue
-        src = os.path.join(folder, name)
-        dst = os.path.join(target_folder, name)
-        if os.path.abspath(src) == os.path.abspath(dst):
-            continue
-        if verbose:
-            logging.debug("Moving sidecar %s -> %s", src, dst, extra={'target': os.path.basename(src)})
-        if not dry_run:
-            os.makedirs(target_folder, exist_ok=True)
-            os.replace(src, dst)
-        count += 1
-    return count
+    Lightweight tracker for end-of-run summaries.
 
-# =============================================================================
-# Run summary helper
-# =============================================================================
+    Usage:
+        s = RunSummary()
+        s.inc('processed', 3)
+        s.add_bytes('freed_bytes', 12_345_678)
+        # ... do your work ...
+        s.emit_lines([
+            f"Processed {s['processed']} items in {s.duration_hms}.",
+            f"Freed {s.hbytes('freed_bytes')}. Failures: {s['failed']}.",
+        ], json_extra={'processed': s['processed'], 'failed': s['failed']})
+    """
+    def __init__(self):
+        self._t0 = datetime.datetime.now()
+        self._t1 = None
+        self.counters = defaultdict(int)   # any numeric counters
+        self.metrics  = {}                 # arbitrary other values
+        self.notes = []                    # misc strings (e.g., sample failures)
 
-class RunSummary(dict):
-    """
-    Lightweight metrics recorder for a run. Behaves like a dict with helpers.
-    """
+    # timing
+    @property
+    def duration_s(self) -> float:
+        end = self._t1 or datetime.datetime.now()
+        return (end - self._t0).total_seconds()
+
+    @property
+    def duration_hms(self) -> str:
+        return format_duration(self.duration_s)
+
+    def stop(self):
+        self._t1 = datetime.datetime.now()
+
+    # counters & metrics
     def inc(self, key: str, n: int = 1):
-        self[key] = int(self.get(key, 0)) + int(n)
-        return self[key]
+        self.counters[key] += n
 
-    def add_bytes(self, key: str, n: int = 0):
-        return self.inc(key, n)
+    def add_bytes(self, key: str, n: int):
+        self.counters[key] += int(n)
 
     def set(self, key: str, value):
-        self[key] = value
-        return value
+        self.metrics[key] = value
 
-    def emit_lines(self, lines, json_extra=None):
-        """
-        Emit human-friendly summary lines and one machine-readable JSON line at DEBUG level.
-        """
-        for ln in lines:
-            logging.info(ln)
-        payload = dict(self)
-        if json_extra:
-            payload.update(json_extra)
+    def note(self, text: str):
+        self.notes.append(text)
+
+    def __getitem__(self, key: str):
+        # convenience for counters/metrics
+        if key in self.counters:
+            return self.counters[key]
+        return self.metrics.get(key)
+
+    def hbytes(self, key: str) -> str:
+        """human-readable bytes for a counter/metric name."""
+        val = self[key]
+        return human_bytes(int(val or 0))
+
+    # emission
+    def emit_lines(self, lines, level=logging.INFO, json_extra=None):
+        """Log one or more human lines, then a compact JSON line at DEBUG."""
+        self.stop()
+        # Human-readable lines
+        for line in lines:
+            logging.log(level, line, extra={'target': 'SUMMARY'})
+        # Optional JSON line for machines
         try:
-            logging.debug(json.dumps(payload, default=str))
+            payload = {
+                'duration_s': int(round(self.duration_s)),
+                'counters': dict(self.counters),
+                'metrics': self.metrics,
+            }
+            if self.notes:
+                payload['notes'] = self.notes
+            if json_extra:
+                payload.update(json_extra)
+            logging.debug("%s", payload, extra={'target': 'SUMMARY'})
         except Exception:
-            logging.debug(str(payload))
-
-# =============================================================================
-# Date extraction utilities
-# =============================================================================
-
-# Build EXIF tag lookup
-_EXIF_TAGS = {v: k for k, v in getattr(ExifTags, "TAGS", {}).items()}
-
-def _parse_exif_datetime(val: str):
-    # EXIF format: "YYYY:MM:DD HH:MM:SS"
-    try:
-        return _dt.datetime.strptime(val, "%Y:%m:%d %H:%M:%S")
-    except Exception:
-        return None
-
-
-def _ffprobe_creation_time(path: str):
-    """
-    Attempt to read creation_time from ffprobe.
-    Returns datetime or None.
-    """
-    try:
-        cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "format_tags=creation_time:stream_tags=creation_time",
-            "-of", "default=nw=1:nk=1",
-            path,
-        ]
-        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, encoding="utf-8").strip()
-        if not out:
-            return None
-        for line in out.splitlines():
-            line = line.strip()
-            for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z"):
-                try:
-                    return _dt.datetime.strptime(line, fmt)
-                except Exception:
-                    continue
-        try:
-            return _dt.datetime.fromisoformat(out.splitlines()[0])
-        except Exception:
-            return None
-    except Exception:
-        return None
-
-
-def get_dates_from_file(path: str):
-    """
-    Collect plausible dates for a media file.
-    Returns list of tuples (source, datetime), e.g.:
-      [("exif:DateTimeOriginal", dt), ("file:mtime", dt), ...]
-    """
-    results = []
-    ext = os.path.splitext(path)[1].lower()
-
-    # EXIF for images
-    if is_image_ext(ext):
-        try:
-            with Image.open(path) as img:
-                exif = img.getexif()
-                if exif:
-                    for key_name in ("DateTimeOriginal", "CreateDate", "DateTimeDigitized", "DateTime"):
-                        tag = _EXIF_TAGS.get(key_name)
-                        if tag is None:
-                            continue
-                        val = exif.get(tag)
-                        if not val:
-                            continue
-                        if isinstance(val, bytes):
-                            try:
-                                val = val.decode("utf-8", "ignore")
-                            except Exception:
-                                continue
-                        dt = _parse_exif_datetime(str(val))
-                        if dt:
-                            results.append((f"exif:{key_name}", dt))
-        except Exception:
+            # Never let summary logging crash the script
             pass
-
-    # Video metadata via ffprobe
-    if is_video_ext(ext):
-        dt = _ffprobe_creation_time(path)
-        if dt:
-            results.append(("ffprobe:creation_time", dt))
-
-    # Filesystem times (fallbacks)
-    try:
-        mtime = _dt.datetime.fromtimestamp(os.path.getmtime(path))
-        results.append(("file:mtime", mtime))
-    except Exception:
-        pass
-    try:
-        ctime = _dt.datetime.fromtimestamp(os.path.getctime(path))
-        results.append(("file:ctime", ctime))
-    except Exception:
-        pass
-
-    # De-duplicate identical timestamps keeping first label
-    seen = set()
-    deduped = []
-    for label, dt in results:
-        key = dt.replace(microsecond=0)
-        if key not in seen:
-            seen.add(key)
-            deduped.append((label, dt))
-    return deduped
-
-
-def select_date(candidates, mode: str = "default"):
-    """
-    Given a list of (label, datetime), choose one based on mode.
-
-    modes:
-      - 'default': prefer exif DateTimeOriginal/CreateDate, else ffprobe, else mtime, else ctime
-      - 'newest': maximum datetime
-      - 'oldest': minimum datetime
-
-    Returns (label, datetime) or None if empty.
-    """
-    if not candidates:
-        return None
-
-    if mode == "newest":
-        return max(candidates, key=lambda t: t[1])
-    if mode == "oldest":
-        return min(candidates, key=lambda t: t[1])
-
-    order = [
-        "exif:DateTimeOriginal", "exif:CreateDate", "exif:DateTimeDigitized", "exif:DateTime",
-        "ffprobe:creation_time",
-        "file:mtime", "file:ctime",
-    ]
-    best = None
-    best_rank = 1e9
-    for label, dt in candidates:
-        try:
-            rank = order.index(label)
-        except ValueError:
-            rank = 999
-        if rank < best_rank:
-            best_rank = rank
-            best = (label, dt)
-    return best or max(candidates, key=lambda t: t[1])
-
-# =============================================================================
-# Simple credential helper
-# =============================================================================
-
-def prompt_password(prompt: str = "Password: "):
-    """
-    Prompt once for a password (no confirmation).
-    """
-    return getpass.getpass(prompt)
-
-# =============================================================================
-# Zip/folder hashing helpers (available for converters)
-# =============================================================================
-
-def map_relative_file_hashes(root_folder: str, *, algorithm: str = "sha256"):
-    """
-    Return a dict: { 'relative/posix/path': hexdigest } for all files under root_folder (recursive).
-    Paths use '/' as separator for stable zip comparisons.
-    """
-    mapping = {}
-    root_folder = os.path.abspath(root_folder)
-    for curr, dirs, files in os.walk(root_folder):
-        for name in files:
-            fpath = os.path.join(curr, name)
-            rel = os.path.relpath(fpath, root_folder).replace("\\", "/")
-            mapping[rel] = calculate_file_hash(fpath, algo=algorithm)
-    return mapping
-
-__all__ = [
-    "__version__",
-    "SIDECAR_EXTENSIONS", "IMAGE_EXTENSIONS", "VIDEO_EXTENSIONS", "OTHER_EXTENSIONS",
-    "MEDIA_EXTENSIONS", "JUNK_FILENAMES", "JUNK_PREFIXES",
-    "MONTH_NAMES", "WEEK_PREFIX",
-    "configure_logging", "RunSummary",
-    "add_target_args", "validate_path", "resolve_target",
-    "is_hidden", "iter_files", "iter_dirs", "calculate_file_hash", "unique_path",
-    "is_image_ext", "is_video_ext", "is_media_ext", "move_sidecar_files",
-    "get_dates_from_file", "select_date",
-    "map_relative_file_hashes",
-    "prompt_password",
-]

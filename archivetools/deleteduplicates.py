@@ -1,362 +1,176 @@
 import os
+import sys
 import argparse
 import logging
 from collections import defaultdict
-from typing import Dict, List, Tuple
-
 from archivetools import (
-    configure_logging,
-    add_target_args,
-    resolve_target,
-    iter_files,
-    calculate_file_hash,
+    __version__,
     get_dates_from_file,
     select_date,
+    calculate_file_hash,
     MEDIA_EXTENSIONS,
     RunSummary,
 )
 
-# ------------------------------------------------------------
-# Core duplicate detection
-# ------------------------------------------------------------
-
-def _group_candidates_by_size(paths: List[str]) -> Dict[int, List[str]]:
-    by_size: Dict[int, List[str]] = defaultdict(list)
-    for p in paths:
-        try:
-            sz = os.path.getsize(p)
-        except FileNotFoundError:
-            continue
-        by_size[sz].append(p)
-    # Only keep ambiguous sizes (more than one file)
-    return {sz: lst for sz, lst in by_size.items() if len(lst) > 1}
-
-
-def _group_by_hash(paths: List[str], *, algo: str, summary: RunSummary | None) -> Dict[str, List[str]]:
-    by_hash: Dict[str, List[str]] = defaultdict(list)
-    for p in paths:
-        try:
-            h = calculate_file_hash(p, algo=algo)
-        except FileNotFoundError:
-            continue
-        by_hash[h].append(p)
-        if summary:
-            summary.inc("hashed")
-    # Only groups with more than one file are true dup candidates
-    return {h: lst for h, lst in by_hash.items() if len(lst) > 1}
-
-
-def _pick_keeper_by_date(paths: List[str], mode: str, verbose: bool, summary: RunSummary | None) -> str:
+def prioritize_file(files, mode="default", verbose=False):
     """
-    Choose which file to keep based on detected dates and the selected mode.
+    Decide which file to KEEP among exact-duplicate files (same content hash).
+    Preference:
+      - Use select_date(mode) over detected dates; fall back to file mtime if none.
+      - Keep OLDEST by default; keep NEWEST if mode == 'newest'.
+    Returns the filepath to keep.
     """
-    scored: List[Tuple[str, Tuple[str, object] | None]] = []
-    for p in paths:
-        candidates = get_dates_from_file(p)
-        choice = select_date(candidates, mode=mode)
-        if verbose:
-            logging.debug("Dates for %s -> %s ; choice=%s", os.path.basename(p), candidates, choice, extra={"target": os.path.basename(p)})
-        scored.append((p, choice))
-
-    # If no one has a date, fall back to keeping the first path deterministically (sorted for stability)
-    any_date = [c for _, c in scored if c]
-    if not any_date:
-        return sorted(paths)[0]
-
-    # Select the file whose chosen date best matches the mode (select_date already applied per file)
-    # We'll just take the file with the "best" chosen date according to the same mode:
-    dated = [(p, c[1]) for p, c in scored if c]
-    if mode == "newest":
-        keeper = max(dated, key=lambda t: t[1])[0]
-    elif mode == "oldest":
-        keeper = min(dated, key=lambda t: t[1])[0]
-    else:
-        # 'default': prefer the files that actually had EXIF/ffprobe choice first; tie-break on newest
-        exif_like = []
-        others = []
-        for p, (label, d) in [(p, (c[0], c[1])) for p, c in scored if c]:
-            if str(label).startswith("exif:") or str(label).startswith("ffprobe:"):
-                exif_like.append((p, d))
+    dated = []
+    for f in files:
+        try:
+            dates = get_dates_from_file(f)
+            sel = select_date(dates, mode=mode)
+            if sel:
+                _, dt = sel
             else:
-                others.append((p, d))
-        pool = exif_like or others
-        keeper = max(pool, key=lambda t: t[1])[0]
-    if summary:
-        summary.inc(f"kept_by_{mode}")
-    return keeper
-
-
-def _delete_others(paths: List[str], keeper: str, *, dry_run: bool, verbose: bool, summary: RunSummary | None) -> None:
-    """
-    Delete all files in 'paths' except 'keeper'.
-    """
-    for p in paths:
-        if os.path.abspath(p) == os.path.abspath(keeper):
-            continue
-        name = os.path.basename(p)
-        try:
-            bytes_p = os.path.getsize(p)
-        except FileNotFoundError:
-            bytes_p = 0
-
-        if dry_run:
-            if verbose:
-                logging.debug("Would delete duplicate: %s", p, extra={"target": name})
-        else:
+                dt = None
+        except Exception:
+            dt = None
+        if dt is None:
             try:
-                os.remove(p)
+                dt = os.path.getmtime(f)
+            except Exception:
+                dt = 0
+        dated.append((f, dt))
+    reverse = True if mode == "newest" else False
+    keep = sorted(dated, key=lambda t: t[1], reverse=reverse)[0][0]
+    if verbose:
+        logging.debug(
+            "Keeping representative duplicate: %s",
+            os.path.basename(keep),
+            extra={'target': os.path.basename(keep)},
+        )
+    return keep
+
+def process_folder(folder_path, mode="default", dry_run=False, verbose=False, summary=None):
+    s = summary
+    # 1) Hash all media files (group by content hash)
+    buckets = defaultdict(list)
+    for root, _, files in os.walk(folder_path):
+        for name in files:
+            path = os.path.join(root, name)
+            ext = os.path.splitext(name)[1].lower()
+            if ext not in MEDIA_EXTENSIONS:
+                continue
+            if s: s.inc('scanned')
+            try:
+                h = calculate_file_hash(path)
+                buckets[h].append(path)
+                if s: s.inc('hashed')
+                if verbose:
+                    logging.debug("Hashed %s", path, extra={'target': name})
             except Exception as e:
-                logging.error("Failed to delete duplicate: %s", e, extra={"target": name})
-                if summary:
-                    summary.inc("errors")
+                logging.error("Failed to hash file: %s", e, extra={'target': name})
+                if s: s.inc('errors')
+
+    # 2) For each hash-bucket with duplicates, choose one to keep and delete others
+    largest_set = 0
+    for digest, files in buckets.items():
+        if len(files) <= 1:
+            continue
+        if s: s.inc('duplicate_sets')
+        if len(files) > largest_set:
+            largest_set = len(files)
+
+        keep = prioritize_file(files, mode=mode, verbose=verbose)
+        to_delete = [f for f in files if f != keep]
+
+        for f in to_delete:
+            try:
+                size = os.path.getsize(f)
+            except OSError:
+                size = 0
+
+            if dry_run:
+                if verbose:
+                    logging.debug(
+                        "Would delete duplicate: %s (kept %s)",
+                        f, keep,
+                        extra={'target': os.path.basename(f)},
+                    )
                 continue
 
-        logging.info("Deleted duplicate", extra={"target": name})
-        if summary:
-            summary.inc("deleted")
-            summary.inc("reclaimed_bytes", bytes_p)
-
-
-# ------------------------------------------------------------
-# Batch mode
-# ------------------------------------------------------------
-
-def process_batch_folder(
-    root: str,
-    *,
-    recursive: bool,
-    include_hidden: bool,
-    mode: str,
-    algo: str,
-    dry_run: bool,
-    verbose: bool,
-    summary: RunSummary | None,
-) -> None:
-    """
-    Find and remove duplicate media files inside 'root'.
-    """
-    # Gather files (non-recursive by default)
-    files = list(iter_files(root, recursive=recursive, include_hidden=include_hidden, ext_filter=set(MEDIA_EXTENSIONS)))
-    if summary:
-        summary.set("scanned", len(files))
-
-    # Group by size first for speed
-    by_size = _group_candidates_by_size(files)
-
-    # For each size bucket, group by hash
-    largest_set = 0
-    duplicate_sets = 0
-
-    for size, same_size_paths in by_size.items():
-        # Hash only these candidates
-        by_hash = _group_by_hash(same_size_paths, algo=algo, summary=summary)
-        for h, dup_paths in by_hash.items():
-            duplicate_sets += 1
-            if len(dup_paths) > largest_set:
-                largest_set = len(dup_paths)
-
-            if verbose:
-                logging.debug(
-                    "Duplicate group (size=%d, hash=%s): %s",
-                    size,
-                    h[:12],
-                    ", ".join(os.path.basename(p) for p in dup_paths),
+            try:
+                os.remove(f)
+                if s:
+                    s.inc('deleted')
+                    s.add_bytes('reclaimed_bytes', size)
+                logging.info(
+                    "Deleted duplicate (kept %s)",
+                    os.path.basename(keep),
+                    extra={'target': os.path.basename(f)},
                 )
+            except Exception as e:
+                logging.error("Failed to delete duplicate: %s", e, extra={'target': os.path.basename(f)})
+                if s: s.inc('errors')
 
-            keeper = _pick_keeper_by_date(dup_paths, mode=mode, verbose=verbose, summary=summary)
-            if verbose:
-                logging.debug("Keeping: %s", os.path.basename(keeper), extra={"target": os.path.basename(keeper)})
-
-            _delete_others(dup_paths, keeper, dry_run=dry_run, verbose=verbose, summary=summary)
-
-    if summary:
-        summary.set("duplicate_sets", duplicate_sets)
-        summary.set("largest_set", largest_set)
-        summary.set("mode", mode)
-        summary.set("algo", algo)
-
-
-# ------------------------------------------------------------
-# Single-file mode
-# ------------------------------------------------------------
-
-def process_single_file(
-    file_path: str,
-    *,
-    parent_root: str,
-    recursive: bool,
-    include_hidden: bool,
-    algo: str,
-    dry_run: bool,
-    verbose: bool,
-    summary: RunSummary | None,
-) -> None:
-    """
-    In single mode: hash the anchor file, then look for duplicates within the
-    parent scope (non-recursive by default; use --recursive for subfolders). Always
-    keep the anchor; delete other copies with the same hash.
-    """
-    try:
-        size_anchor = os.path.getsize(file_path)
-    except FileNotFoundError:
-        logging.error("Anchor file not found", extra={"target": os.path.basename(file_path)})
-        if summary:
-            summary.inc("errors")
-        return
-
-    try:
-        hash_anchor = calculate_file_hash(file_path, algo=algo)
-    except FileNotFoundError:
-        logging.error("Anchor file vanished during hashing", extra={"target": os.path.basename(file_path)})
-        if summary:
-            summary.inc("errors")
-        return
-
-    # Gather peers in scope (exclude the anchor path itself)
-    peers = [
-        p for p in iter_files(parent_root, recursive=recursive, include_hidden=include_hidden, ext_filter=set(MEDIA_EXTENSIONS))
-        if os.path.abspath(p) != os.path.abspath(file_path)
-    ]
-    if summary:
-        summary.set("scanned", len(peers) + 1)  # include anchor
-
-    # Pre-filter by size
-    same_size = [p for p in peers if os.path.getsize(p) == size_anchor]
-    # Confirm with hash
-    dups = []
-    for p in same_size:
-        try:
-            h = calculate_file_hash(p, algo=algo)
-        except FileNotFoundError:
-            continue
-        if h == hash_anchor:
-            dups.append(p)
-            if summary:
-                summary.inc("hashed")
-
-    if not dups:
-        logging.info("No duplicates found for the anchor.", extra={"target": os.path.basename(file_path)})
-        return
-
-    # Delete all duplicates (anchor is the keeper)
-    _delete_others([file_path] + dups, file_path, dry_run=dry_run, verbose=verbose, summary=summary)
-
-    if summary:
-        summary.set("duplicate_sets", 1)
-        summary.set("largest_set", len(dups) + 1)
-
-
-# ------------------------------------------------------------
-# CLI
-# ------------------------------------------------------------
+    # record a few metrics
+    if s:
+        s.set('largest_set', int(largest_set))
+        s.set('mode', mode)
 
 def main():
     parser = argparse.ArgumentParser(
-        description=(
-            "Find and remove duplicate media files. "
-            "Batch mode scans a folder; single mode targets duplicates of one file. "
-            "Non-recursive by default — use --recursive to include subfolders."
-        ),
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Deletes duplicate media files based on content hash, keeping a single representative per group.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-
-    add_target_args(
-        parser,
-        folder_help="Batch mode: scan this folder for duplicate media (non-recursive by default; use --recursive to include subfolders).",
-        single_help="Single mode: find duplicates of exactly this file in its parent scope (use --recursive to include subfolders).",
-        required=True,
-    )
-
+    parser.add_argument('-v', '--version', action='version', version=f'ArchiveTools {__version__}')
+    parser.add_argument('-f', '--folder', type=str, required=True, help='Path to the folder to process')
     parser.add_argument(
-        "--mode",
+        '--mode',
         type=str,
-        default="default",
-        choices=["default", "oldest", "newest"],
-        help="(Batch) Which copy to KEEP in each duplicate set, based on detected dates.",
+        default='default',
+        choices=['default','oldest','newest','exif','ffprobe','sidecar','filename','folder','metadata'],
+        help='Date selection strategy for prioritization'
     )
-    parser.add_argument(
-        "--algo",
-        type=str,
-        default="sha256",
-        choices=["sha256", "md5", "sha1", "blake2b", "blake2s"],
-        help="Hash algorithm for file content comparison.",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be deleted without removing files")
-
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be removed without deleting files')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     args = parser.parse_args()
-    configure_logging(getattr(args, "verbose", False))
 
-    mode_sel, target = resolve_target(args, single_expect="file", folder_expect="folder")
+    logging.getLogger().setLevel(logging.DEBUG if args.verbose else logging.INFO)
+
+    folder_path = args.folder
+    if not os.path.isdir(folder_path):
+        logging.error("The specified path is not a valid directory", extra={'target': os.path.basename(folder_path)})
+        sys.exit(1)
 
     s = RunSummary()
-    s.set("dry_run", bool(args.dry_run))
-    s.set("recursive", bool(getattr(args, "recursive", False)))
-    s.set("include_hidden", bool(getattr(args, "include_hidden", False)))
+    s.set('mode', args.mode)
+    s.set('dry_run', bool(args.dry_run))
 
-    if mode_sel == "single":
-        parent_root = os.path.dirname(target)
-        process_single_file(
-            target,
-            parent_root=parent_root,
-            recursive=bool(getattr(args, "recursive", False)),
-            include_hidden=bool(getattr(args, "include_hidden", False)),
-            algo=args.algo,
-            dry_run=args.dry_run,
-            verbose=getattr(args, "verbose", False),
-            summary=s,
-        )
-    else:
-        process_batch_folder(
-            target,
-            recursive=bool(getattr(args, "recursive", False)),
-            include_hidden=bool(getattr(args, "include_hidden", False)),
-            mode=args.mode,
-            algo=args.algo,
-            dry_run=args.dry_run,
-            verbose=getattr(args, "verbose", False),
-            summary=s,
-        )
+    logging.info("Processing folder", extra={'target': os.path.basename(folder_path)})
+    process_folder(folder_path, mode=args.mode, dry_run=args.dry_run, verbose=args.verbose, summary=s)
+    logging.info("Processing complete.", extra={'target': os.path.basename(folder_path)})
 
-    # Emit summary
-    scanned = s.get("scanned", 0) or 0
-    hashed = s.get("hashed", 0) or 0
-    dup_sets = s.get("duplicate_sets", 0) or 0
-    deleted = s.get("deleted", 0) or 0
-    reclaimed = s.get("reclaimed_bytes", 0) or 0
-    largest = s.get("largest_set", 0) or 0
-    errors = s.get("errors", 0) or 0
+    # end-of-run summary
+    scanned = s['scanned'] or 0
+    hashed = s['hashed'] or 0
+    dup_sets = s['duplicate_sets'] or 0
+    deleted = s['deleted'] or 0
+    reclaimed_h = s.hbytes('reclaimed_bytes')
+    largest = s['largest_set'] or 0
+    errors = s['errors'] or 0
 
-    line1 = (
-        f"Scanned {scanned} file(s); hashed {hashed}. "
-        f"Found {dup_sets} duplicate set(s) (largest set: {largest})."
-    )
-    line2 = f"Deleted {deleted} file(s); reclaimed {reclaimed} bytes. Errors: {errors}."
-    if mode_sel == "folder":
-        line3 = f"Keeper selection mode: {s.get('mode', 'default')}; hash algo: {s.get('algo', 'sha256')}."
-        lines = [line1, line2, line3]
-    else:
-        lines = [line1, line2]
+    line1 = f"Scanned {scanned} media files — computed {hashed} hashes in {s.duration_hms}."
+    line2 = f"Duplicate sets found: {dup_sets}. Deleted {deleted} files, reclaimed {reclaimed_h}. Largest set size: {largest}."
+    line3 = f"Mode: {s['mode']}. Dry-run: {'yes' if s['dry_run'] else 'no'}. Errors: {errors}."
 
-    s.emit_lines(
-        lines,
-        json_extra={
-            "target_mode": mode_sel,
-            "scanned": scanned,
-            "hashed": hashed,
-            "duplicate_sets": dup_sets,
-            "deleted": deleted,
-            "reclaimed_bytes": reclaimed,
-            "largest_set": largest,
-            "errors": errors,
-            "mode": s.get("mode"),
-            "algo": s.get("algo"),
-            "dry_run": s["dry_run"],
-            "recursive": s["recursive"],
-            "include_hidden": s["include_hidden"],
-            "target": target,
-        },
-    )
-
+    s.emit_lines([line1, line2, line3], json_extra={
+        'scanned': scanned,
+        'hashed': hashed,
+        'duplicate_sets': dup_sets,
+        'deleted': deleted,
+        'reclaimed_bytes': s['reclaimed_bytes'] or 0,
+        'largest_set': largest,
+        'errors': errors,
+        'mode': s['mode'],
+        'dry_run': s['dry_run'],
+    })
 
 if __name__ == "__main__":
     main()
